@@ -1,5 +1,10 @@
 # cli-wrappers
 
+[![CI](https://github.com/ShipItSwifty/cli-wrappers/actions/workflows/ci.yml/badge.svg)](https://github.com/ShipItSwifty/cli-wrappers/actions/workflows/ci.yml)
+[![Documentation](https://github.com/ShipItSwifty/cli-wrappers/actions/workflows/docs.yml/badge.svg)](https://shipitswifty.github.io/cli-wrappers/documentation/)
+![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-orange)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey)
+
 Typed, testable Swift wrappers for the command-line tools behind mobile builds, tests, and
 devices. Every wrapper builds an exact argv (no shell strings) and runs it through
 [SwiftyShell](https://github.com/maniramezan/SwiftyShell), so commands can be asserted in unit
@@ -70,6 +75,14 @@ let command = Bazel(context: shell)
 
 Build mechanisms, device lifecycle, and test execution built on these wrappers live in
 [`ShipItSwifty/mobile-kits`](https://github.com/ShipItSwifty/mobile-kits).
+
+## Documentation
+
+API documentation: <https://shipitswifty.github.io/cli-wrappers/documentation/>
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
