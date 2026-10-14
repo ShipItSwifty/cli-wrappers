@@ -1,6 +1,7 @@
 import Foundation
-import OSLog
+import Logging
 import SwiftyShell
+import WrapperSupport
 
 /// A discovered xcodebuild destination for running tests.
 public struct XcodebuildDestination: Codable, Sendable, Hashable {
@@ -49,7 +50,7 @@ public struct XcodebuildDestination: Codable, Sendable, Hashable {
 /// ```
 public struct DestinationDiscovery: Sendable {
     private let shell: ShellContext
-    private let logger = Logger(subsystem: "XcodeBuildKit", category: "DestinationDiscovery")
+    private let logger = Logger.forType(DestinationDiscovery.self)
 
     public init(shell: ShellContext) {
         self.shell = shell

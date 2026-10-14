@@ -2,11 +2,14 @@
 
 import PackageDescription
 
+let swiftyShell: Target.Dependency = .product(name: "SwiftyShell", package: "SwiftyShell")
+let logging: Target.Dependency = .product(name: "Logging", package: "swift-log")
+
 /// One library per wrapped command-line tool. Every wrapper depends only on SwiftyShell and the
 /// internal `WrapperSupport` target, so a client imports exactly the tools it drives.
 let wrappers: [(name: String, dependencies: [Target.Dependency])] = [
     // Apple
-    ("XcodeBuildKit", []),
+    ("XcodeBuildKit", [logging]),
     ("XcrunKit", []),
     ("DeviceCtlKit", []),
     ("XcodeGenKit", []),
@@ -32,8 +35,6 @@ let wrappers: [(name: String, dependencies: [Target.Dependency])] = [
     ("BazelKit", []),
 ]
 
-let swiftyShell: Target.Dependency = .product(name: "SwiftyShell", package: "SwiftyShell")
-
 let package = Package(
     name: "CLIWrappers",
     platforms: [.macOS(.v15)],
@@ -41,10 +42,11 @@ let package = Package(
     dependencies: [
         // The `Swift` trait enables SwiftyShell's typed `swift` family, which SwiftPMKit extends.
         .package(url: "https://github.com/maniramezan/SwiftyShell.git", from: "0.7.0", traits: ["Swift"]),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0"),
     ],
     targets: [
-        .target(name: "WrapperSupport", dependencies: [swiftyShell]),
+        .target(name: "WrapperSupport", dependencies: [swiftyShell, logging]),
         .testTarget(name: "WrapperSupportTests", dependencies: ["WrapperSupport"]),
     ]
         + wrappers.map { .target(name: $0.name, dependencies: $0.dependencies + ["WrapperSupport", swiftyShell]) }
