@@ -10,7 +10,7 @@ struct EmulatorTests {
     func emulatorStartOptions() {
         let args = Emulator(executablePath: "emulator")
             .start(
-                avd: "Pixel_7", headless: true, gpu: "swiftshader_indirect", noSnapshot: true, wipeData: true, readOnly: true, port: 5560
+                avd: "Pixel_7", headless: true, gpu: "swiftshader_indirect", snapshot: .disabled, wipeData: true, readOnly: true, port: 5560
             )
             .command()
             .arguments
@@ -33,5 +33,15 @@ struct EmulatorTests {
                 == "/sdk-root/emulator/emulator")
         #expect(Emulator.resolveExecutable(environment: [:], fileExists: exists) == "emulator")
         #expect(Emulator(executablePath: "/custom/emulator").list().command().executableName == "/custom/emulator")
+    }
+
+    @Test("Snapshot modes and extra arguments")
+    func snapshotModes() {
+        #expect(
+            Emulator(executablePath: "emulator").start(
+                avd: "P", snapshot: .loadOnly, port: 5556, additionalArguments: ["-netdelay", "none"]
+            )
+            .command().arguments == ["-avd", "P", "-no-snapshot-save", "-port", "5556", "-netdelay", "none"])
+        #expect(EmulatorSnapshot.saveOnly.arguments == ["-no-snapshot-load"])
     }
 }

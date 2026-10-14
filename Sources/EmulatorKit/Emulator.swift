@@ -115,8 +115,8 @@ public struct Emulator: RunnableCommandFamily {
     ///   - headless: Pass `-no-window -no-audio -no-boot-anim` for headless CI operation. Required
     ///     on machines without a display, where a windowed emulator exits immediately.
     ///   - gpu: GPU acceleration mode (e.g. `"swiftshader_indirect"` for CI without GPU).
-    ///   - noSnapshot: Pass `-no-snapshot` to cold boot and not save state on exit, so every run
-    ///     starts from the same device state.
+    ///   - snapshot: Quick-boot snapshot handling; `.disabled` cold boots and never saves, so every
+    ///     run starts from the same device state.
     ///   - wipeData: Pass `-wipe-data` to reset user data to factory state.
     ///   - readOnly: Pass `-read-only` so several emulators can run from the same AVD concurrently.
     ///   - port: Pass `-port <n>` to pin the console port, which fixes the serial to
@@ -125,10 +125,11 @@ public struct Emulator: RunnableCommandFamily {
         avd: String,
         headless: Bool = false,
         gpu: String? = nil,
-        noSnapshot: Bool = false,
+        snapshot: EmulatorSnapshot = .loadAndSave,
         wipeData: Bool = false,
         readOnly: Bool = false,
-        port: Int? = nil
+        port: Int? = nil,
+        additionalArguments: [String] = []
     ) -> Self {
         var args = ["-avd", avd]
         if headless {
@@ -137,11 +138,11 @@ public struct Emulator: RunnableCommandFamily {
         if let gpu {
             args += ["-gpu", gpu]
         }
-        if noSnapshot { args.append("-no-snapshot") }
+        args += snapshot.arguments
         if wipeData { args.append("-wipe-data") }
         if readOnly { args.append("-read-only") }
         if let port { args += ["-port", String(port)] }
-        return copy(arguments: args)
+        return copy(arguments: args + additionalArguments)
     }
 
     /// `emulator -list-avds` — List all available AVDs.
@@ -164,5 +165,26 @@ public struct Emulator: RunnableCommandFamily {
             arguments: arguments,
             executablePath: executablePath
         )
+    }
+}
+
+/// How the emulator uses its quick-boot snapshot.
+public enum EmulatorSnapshot: Sendable, Equatable {
+    /// Load the snapshot at boot and save it on exit (the emulator's default).
+    case loadAndSave
+    /// Load the snapshot for a fast boot but never save, so state does not accumulate (`-no-snapshot-save`).
+    case loadOnly
+    /// Cold boot, but save on exit (`-no-snapshot-load`).
+    case saveOnly
+    /// Cold boot and never save (`-no-snapshot`).
+    case disabled
+
+    public var arguments: [String] {
+        switch self {
+        case .loadAndSave: []
+        case .loadOnly: ["-no-snapshot-save"]
+        case .saveOnly: ["-no-snapshot-load"]
+        case .disabled: ["-no-snapshot"]
+        }
     }
 }
