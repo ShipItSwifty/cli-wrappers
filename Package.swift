@@ -40,8 +40,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: wrappers.map { .library(name: $0.name, targets: [$0.name]) },
     dependencies: [
-        // The `Swift` trait enables SwiftyShell's typed `swift` family, which SwiftPMKit extends.
-        .package(url: "https://github.com/maniramezan/SwiftyShell.git", from: "0.7.0", traits: ["Swift"]),
+        .package(url: "https://github.com/maniramezan/SwiftyShell.git", from: "0.7.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0"),
     ],

@@ -24,7 +24,7 @@ Import only the tools you drive. Each one is its own library product:
 | | `AndroidCLIKit` | Google's `android` CLI |
 | Cross-platform | `FlutterKit` | `flutter` |
 | | `ReactNativeKit` | `react-native`, `expo` (via npx, yarn, pnpm, or bunx) |
-| | `SwiftPMKit` | package test/coverage/describe workflows on SwiftyShell's `swift` |
+| | `SwiftPMKit` | `swift` package build, test, coverage, format, and manifest inspection |
 | | `BazelKit` | `bazel` / `bazelisk` |
 
 ## Install

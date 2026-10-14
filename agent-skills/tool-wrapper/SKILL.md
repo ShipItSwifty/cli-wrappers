@@ -61,8 +61,9 @@ public struct Tool: RunnableCommandFamily {
 - No `#if os(macOS)` around argv construction: Linux builds and tests every wrapper. Gate only a
   test that runs the real tool.
 - Mark device- or machine-mutating operations **Mutating** in their DocC.
-- When SwiftyShell already models a tool (`Swift`, `Npm`, `Git`, …), extend its type instead of
-  writing a second wrapper (see `SwiftPMKit`).
+- Never enable a SwiftyShell trait from this package. Traits unify across the whole build graph,
+  and the `Swift` trait adds a type named `Swift` that shadows the standard library module in
+  every consumer.
 
 ## Tests
 
