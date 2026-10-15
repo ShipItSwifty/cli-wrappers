@@ -334,7 +334,17 @@ public struct Adb: RunnableCommandFamily {
         case auto
     }
 
+    /// `adb shell pm path <package>` — Reports the installed APK path.
+    public func pmPath(package: String) -> Self {
+        copy(arguments: ["shell", "pm", "path", package])
+    }
+
     // MARK: - Port forwarding
+
+    /// `adb forward --list` — Lists every device's forwarded ports.
+    public func listForwards() -> Self {
+        copy(arguments: ["forward", "--list"])
+    }
 
     /// `adb forward tcp:<local> tcp:<remote>` — Forward a host TCP port to the
     /// device.

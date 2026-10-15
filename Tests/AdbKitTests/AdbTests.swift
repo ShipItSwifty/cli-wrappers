@@ -257,4 +257,10 @@ struct AdbTests {
         let command = Adb().emuGeoFix(longitude: -122.084, latitude: 37.422).command()
         #expect(command.arguments == ["emu", "geo", "fix", "-122.084", "37.422"])
     }
+    @Test("Package path and forwarded-port inventory use typed commands")
+    func pathAndForwards() {
+        #expect(Adb().serial("S").pmPath(package: "com.example").command().arguments == ["-s", "S", "shell", "pm", "path", "com.example"])
+        #expect(Adb().listForwards().command().arguments == ["forward", "--list"])
+    }
+
 }
