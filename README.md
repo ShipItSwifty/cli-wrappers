@@ -16,7 +16,7 @@ Import only the tools you drive. Each one is its own library product:
 | --- | --- | --- |
 | Apple | `XcodeBuildKit` | `xcodebuild`, `xcode-select`, destination discovery |
 | | `XcrunKit` | `xcrun`, `simctl`, `xcresulttool`, `xccov`, `agvtool` |
-| | `DeviceCtlKit` | `xcrun devicectl` (physical devices) |
+| | `DeviceCtlKit` | `xcrun devicectl` (physical devices and, from Xcode 27, simulators): every `device`, `list`, `manage`, and `diagnose` command |
 | | `IProxyKit` | `iproxy` (USB port forwarding to iOS devices) |
 | | `XcodeGenKit` / `TuistCLIKit` | `xcodegen`, `tuist` |
 | | `CocoaPodsKit` | `pod` (optionally `bundle exec pod`) |

@@ -2,23 +2,50 @@ import Foundation
 import SwiftyShell
 import WrapperSupport
 
-/// A typed wrapper for `xcrun devicectl`, Apple's CLI for physical devices (CoreDevice).
+/// A typed wrapper for `xcrun devicectl`, Apple's CLI for CoreDevice: physical devices and, from
+/// Xcode 27, simulators.
 ///
 /// `devicectl` is not `simctl` for hardware: it addresses devices by CoreDevice identifier, UDID,
-/// or name, reports through `--json-output`, and has no port forwarding (use `IProxyKit`).
+/// ECID, serial number, name, or DNS name, reports through `--json-output`, and has no port
+/// forwarding (use `IProxyKit`).
+///
+/// Every leaf command of `devicectl device`, `list`, `manage`, and `diagnose` is modelled across
+/// the `DeviceCtl+*.swift` extensions, grouped the way devicectl groups them:
+///
+/// | Group | Operations |
+/// | --- | --- |
+/// | Inventory | `listDevices`, `listAudioDevices`, `listPlugins`, `listPreferredDDI` |
+/// | `device info` | `details`, `apps`, `processes`, `displays`, `files`, `appIcon`, `appearanceInfo`, `audioInfo`, `ddiServices`, `lockState`, `mountpoint`, `standbyInfo`, `voiceOverInfo`, `authListing`, `appResizeInfo` |
+/// | Apps and processes | `install`, `uninstall`, `launch`, `openURL`, `signal`, `terminate`, `suspend`, `resume`, `sendMemoryWarning`, `awaitTermination` |
+/// | Files | `copyToDevice`, `copyFromDevice` |
+/// | Capture | `screenshot`, `screenRecord` |
+/// | Settings | `appearance`, `audio`, `biometrics`, `orientation`, `standby`, `voiceOver`, `resetDevice` |
+/// | Simulation | `simulateLocation`, `simulateStatusBar`, `simulateBiometrics` |
+/// | Pasteboard and notifications | `pasteboard…`, `postNotifications`, `observeNotifications` |
+/// | Profiles, pairing, host | `profile…`, `pairings…`, `pairDevice`, `unpairDevice`, `manageDDIs…`, `diagnose`, `sysdiagnose`, `reboot`, `rename` |
 ///
 /// ```swift
 /// let output = try await DeviceCtl(context: shell)
 ///     .launch(bundleID: "com.example.app", device: udid, terminateExisting: true)
 ///     .run()
 /// ```
+///
+/// Operations that never end on their own (`--console`, `observe`, `monitor`, `sync-with-host`,
+/// `screen-record` without a duration, `appResize start`) are still plain argv; the caller decides
+/// whether to run them with a timeout or spawn and tear them down.
 public struct DeviceCtl: RunnableCommandFamily {
-    private var spec: CommandSpec
-    private var jsonOutput: String?
-    private var timeoutSeconds: Int?
-    private var quiet = false
+    var spec: CommandSpec
+    var jsonOutput: String?
+    var timeoutSeconds: Int?
+    var quiet = false
+    var verbose = false
+    var omitDeprecatedFields = false
+    var logOutput: String?
     /// Positional values that must follow every option, e.g. a launched app's bundle id and argv.
-    private var trailing: [String] = []
+    var trailing: [String] = []
+    /// Whether `--` precedes ``trailing``, ending devicectl's own options so app arguments such as
+    /// `-v` are not claimed by devicectl.
+    var terminatesOptions = false
 
     /// The shell context used when running this command family.
     public var context: ShellContext { spec.config.context }
@@ -43,6 +70,10 @@ public struct DeviceCtl: RunnableCommandFamily {
     // MARK: - Global options
 
     /// Writes the machine-readable result to `path`; `-` writes it to stdout.
+    ///
+    /// A failed command still writes its JSON, including an `error` object with the CoreDevice
+    /// error code. Commands that write payloads to stdout (`pasteboard paste`, `launch --console`,
+    /// `sysdiagnose`, `diagnose`) reject `-`; pass a file path to those.
     public func jsonOutput(_ path: String = "-") -> Self {
         modified(self) { $0.jsonOutput = path }
     }
@@ -57,107 +88,22 @@ public struct DeviceCtl: RunnableCommandFamily {
         modified(self) { $0.quiet = enabled }
     }
 
-    // MARK: - Inventory
-
-    /// `list devices`.
-    public func listDevices() -> Self {
-        operation(["list", "devices"])
+    /// Requests more logging output than normal (`--verbose`).
+    public func verbose(_ enabled: Bool = true) -> Self {
+        modified(self) { $0.verbose = enabled }
     }
 
-    /// `device info details`.
-    public func details(device: String) -> Self {
-        operation(["device", "info", "details", "--device", device])
+    /// Drops fields devicectl has deprecated from the JSON output (`--omit-deprecated-fields-in-json`).
+    public func omitDeprecatedFieldsInJSON(_ enabled: Bool = true) -> Self {
+        modified(self) { $0.omitDeprecatedFields = enabled }
     }
 
-    /// `device info apps`, optionally limited to one bundle identifier.
-    public func apps(device: String, bundleID: String? = nil) -> Self {
-        operation(["device", "info", "apps", "--device", device] + optionalOption("--bundle-id", bundleID))
+    /// Writes everything otherwise sent to stdout and stderr to `path` (`--log-output`).
+    public func logOutput(_ path: String) -> Self {
+        modified(self) { $0.logOutput = path }
     }
 
-    /// `device info processes`.
-    public func processes(device: String) -> Self {
-        operation(["device", "info", "processes", "--device", device])
-    }
-
-    // MARK: - Apps
-
-    /// `device install app`.
-    public func install(appPath: String, device: String) -> Self {
-        operation(["device", "install", "app", "--device", device, appPath])
-    }
-
-    /// `device uninstall app`.
-    public func uninstall(bundleID: String, device: String) -> Self {
-        operation(["device", "uninstall", "app", "--device", device, bundleID])
-    }
-
-    /// `device process launch`.
-    ///
-    /// - Parameters:
-    ///   - environment: Encoded as the JSON object `--environment-variables` expects.
-    ///   - arguments: Passed to the app after its bundle identifier.
-    public func launch(
-        bundleID: String,
-        device: String,
-        terminateExisting: Bool = false,
-        console: Bool = false,
-        startStopped: Bool = false,
-        environment: [String: String] = [:],
-        payloadURL: String? = nil,
-        arguments: [String] = []
-    ) -> Self {
-        var values = ["device", "process", "launch", "--device", device]
-        values += flag("--terminate-existing", terminateExisting)
-        values += flag("--console", console)
-        values += flag("--start-stopped", startStopped)
-        if !environment.isEmpty {
-            values += ["--environment-variables", Self.jsonObject(environment)]
-        }
-        values += optionalOption("--payload-url", payloadURL)
-        return modified(operation(values)) { $0.trailing = [bundleID] + arguments }
-    }
-
-    /// `device process signal`.
-    public func signal(_ signal: String = "SIGTERM", pid: Int32, device: String) -> Self {
-        operation(["device", "process", "signal", "--device", device, "--pid", String(pid), "--signal", signal])
-    }
-
-    /// `device process terminate`.
-    public func terminate(pid: Int32, device: String) -> Self {
-        operation(["device", "process", "terminate", "--device", device, "--pid", String(pid)])
-    }
-
-    // MARK: - Capture and simulation
-
-    /// `device capture screenshot`.
-    public func screenshot(device: String, destination: String) -> Self {
-        operation(["device", "capture", "screenshot", "--device", device, "--destination", destination])
-    }
-
-    /// `device capture screen-record`; runs until the process is interrupted.
-    public func screenRecord(device: String, destination: String) -> Self {
-        operation(["device", "capture", "screen-record", "--device", device, "--destination", destination])
-    }
-
-    /// `device simulate location coordinate`.
-    public func simulateLocation(latitude: Double, longitude: Double, device: String) -> Self {
-        operation([
-            "device", "simulate", "location", "coordinate", "--device", device,
-            "--latitude", String(latitude), "--longitude", String(longitude),
-        ])
-    }
-
-    /// `device simulate location clear`.
-    public func clearSimulatedLocation(device: String) -> Self {
-        operation(["device", "simulate", "location", "clear", "--device", device])
-    }
-
-    /// `device settings appearance`.
-    public func appearance(_ mode: DeviceCtlAppearance, device: String) -> Self {
-        operation(["device", "settings", "appearance", "--device", device, "--mode", mode.rawValue])
-    }
-
-    /// Any other `devicectl` subcommand.
+    /// Any `devicectl` subcommand this wrapper does not model, such as one a future Xcode adds.
     public func custom(_ arguments: [String]) -> Self {
         operation(arguments)
     }
@@ -168,15 +114,28 @@ public struct DeviceCtl: RunnableCommandFamily {
         built.arguments += optionalOption("--json-output", jsonOutput)
         built.arguments += timeoutSeconds.map { ["--timeout", String($0)] } ?? []
         built.arguments += flag("--quiet", quiet)
+        built.arguments += flag("--verbose", verbose)
+        built.arguments += flag("--omit-deprecated-fields-in-json", omitDeprecatedFields)
+        built.arguments += optionalOption("--log-output", logOutput)
+        built.arguments += terminatesOptions && !trailing.isEmpty ? ["--"] : []
         built.arguments += trailing
         return built.command()
     }
 
-    private func operation(_ values: [String]) -> Self {
+    // MARK: - Builders shared by the operation extensions
+
+    /// Selects `values` as the operation, dropping the previous operation's positionals.
+    func operation(_ values: [String]) -> Self {
         modified(self) {
             $0.spec.arguments = values
             $0.trailing = []
+            $0.terminatesOptions = false
         }
+    }
+
+    /// Selects an operation on one device: `<path> --device <device> <options>`.
+    func deviceOperation(_ path: [String], device: String, _ options: [String] = []) -> Self {
+        operation(path + ["--device", device] + options)
     }
 
     static func jsonObject(_ values: [String: String]) -> String {
@@ -187,8 +146,24 @@ public struct DeviceCtl: RunnableCommandFamily {
     }
 }
 
-/// Appearance modes accepted by `devicectl device settings appearance`.
-public enum DeviceCtlAppearance: String, Sendable, CaseIterable {
-    case light
-    case dark
+/// Appends `--name` or `--no-name` for a boolean the tool declares as `--name/--no-name`; `nil`
+/// leaves the tool's own default.
+func toggle(_ name: String, _ value: Bool?) -> [String] {
+    guard let value else { return [] }
+    return [value ? "--\(name)" : "--no-\(name)"]
+}
+
+/// Appends `name on` or `name off` for an option that takes `on` or `off`.
+func onOff(_ name: String, _ value: Bool?) -> [String] {
+    value.map { [name, $0 ? "on" : "off"] } ?? []
+}
+
+/// Appends `name value` once per value, for options that repeat.
+func repeated(_ name: String, _ values: [String]) -> [String] {
+    values.flatMap { [name, $0] }
+}
+
+/// Appends `name` and a number when present.
+func optionalNumber<Number: CustomStringConvertible>(_ name: String, _ value: Number?) -> [String] {
+    value.map { [name, $0.description] } ?? []
 }
