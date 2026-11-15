@@ -11,6 +11,7 @@ let wrappers: [(name: String, dependencies: [Target.Dependency])] = [
     // Apple
     ("XcodeBuildKit", [logging]),
     ("XcrunKit", []),
+    ("LLVMCovKit", []),
     ("DeviceCtlKit", []),
     ("XcodeGenKit", []),
     ("TuistCLIKit", []),

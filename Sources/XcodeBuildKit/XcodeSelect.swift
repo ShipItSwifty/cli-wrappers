@@ -36,6 +36,16 @@ public struct XcodeSelect: RunnableCommandFamily {
         operation(["-p"])
     }
 
+    /// **Mutating**: Uses `xcode-select --install` to open the macOS command-line developer tools installer.
+    public func install() -> Self {
+        operation(["--install"])
+    }
+
+    /// **Mutating**: Uses `xcode-select --switch <path>` to change the active developer directory.
+    public func switchPath(_ path: String) -> Self {
+        operation(["--switch", path])
+    }
+
     /// Builds the raw `xcode-select` command.
     public func command() -> Command {
         spec.command()
