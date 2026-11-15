@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyShell
+internal import WrapperSupport
 
 /// A fluent wrapper for the Android Debug Bridge (`adb`) command.
 ///
@@ -27,26 +28,11 @@ import SwiftyShell
 /// let output = try await Adb(context: context).pmListPackages().run()
 /// ```
 public struct Adb: RunnableCommandFamily {
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-
-    /// Optional device serial used to target a specific device. When set, the
-    /// generated `adb` command is prefixed with `-s <serial>`.
-    public let serial: String?
-
-    /// Positional arguments and subcommand arguments (excluding the `-s <serial>`
-    /// prefix, which is applied in ``command()``).
-    public let arguments: [String]
+    private var spec: CommandSpec
 
     /// The shell context used when running this command family.
     public var context: ShellContext {
-        config.context
+        spec.config.context
     }
 
     // MARK: - Init
@@ -54,63 +40,56 @@ public struct Adb: RunnableCommandFamily {
     /// Creates an `Adb` command family bound to a shell context.
     ///
     /// The new client has no serial set and no subcommand selected. Chain a
-    /// subcommand method (e.g. ``devices()``, ``install(apk:replace:)``) before
+    /// subcommand method (e.g. ``devices(long:)``, ``install(apk:replace:)``) before
     /// calling ``run()``.
     ///
-    /// - Parameter context: The shell context that supplies the executor,
-    ///   environment, and search paths used at runtime.
-    public init(context: ShellContext = .init()) {
-        config = ToolConfiguration(context: context)
-        stdoutDestination = .capture
-        stderrDestination = .capture
-        serial = nil
-        arguments = []
+    /// - Parameters:
+    ///   - context: The shell context that supplies the executor, environment, and search paths
+    ///     used at runtime.
+    ///   - executablePath: Explicit `adb` path. When `nil`, uses
+    ///     `$ANDROID_HOME/platform-tools/adb` (or `$ANDROID_SDK_ROOT/…`) from the shell context's
+    ///     environment if it exists, and otherwise `adb` on `PATH`.
+    public init(context: ShellContext = .init(), executablePath: String? = nil) {
+        self.spec = CommandSpec(
+            executable: executablePath ?? Self.resolveExecutable(environment: context.environment),
+            context: context
+        )
     }
 
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        serial: String?,
-        arguments: [String]
-    ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.serial = serial
-        self.arguments = arguments
+    /// Resolves the SDK's `adb` binary from `ANDROID_HOME` / `ANDROID_SDK_ROOT`, falling back to
+    /// `adb` on `PATH`.
+    static func resolveExecutable(
+        environment: [String: String],
+        fileExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String {
+        AndroidSDK.executable(
+            ["platform-tools/adb"],
+            fallback: "adb",
+            environment: environment,
+            fileExists: fileExists
+        )
     }
 
     // MARK: - RunnableCommandFamily
 
     /// Returns a new value with updated shared tool configuration.
-    public func updatingConfiguration(
-        _ update: (ToolConfiguration) -> ToolConfiguration
-    ) -> Self {
-        copy(config: update(config))
+    public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
+        modified(self) { $0.spec.config = update($0.spec.config) }
     }
 
     /// Redirects stdout for the built `adb` command.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination)
+        modified(self) { $0.spec.stdout = destination }
     }
 
     /// Redirects stderr for the built `adb` command.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination)
+        modified(self) { $0.spec.stderr = destination }
     }
 
     /// Builds the raw `adb` command, prefixing `-s <serial>` when one is set.
     public func command() -> Command {
-        var prefix: [String] = []
-        if let serial, !serial.isEmpty {
-            prefix = ["-s", serial]
-        }
-        let base = Command("adb")
-            .args(prefix + arguments)
-            .stdout(stdoutDestination)
-            .stderr(stderrDestination)
-        return config.apply(to: base)
+        spec.command()
     }
 
     // MARK: - Device targeting
@@ -124,25 +103,25 @@ public struct Adb: RunnableCommandFamily {
     ///   `"emulator-5554"` or `"R5CT2074MZ"`. Passing `nil` clears any previously
     ///   set serial.
     public func serial(_ value: String?) -> Self {
-        Self(
-            config: config,
-            stdoutDestination: stdoutDestination,
-            stderrDestination: stderrDestination,
-            serial: value,
-            arguments: arguments
-        )
+        modified(self) {
+            if let value, !value.isEmpty {
+                $0.spec.globalArguments = ["-s", value]
+            } else {
+                $0.spec.globalArguments = []
+            }
+        }
     }
 
     // MARK: - Daemon lifecycle
 
-    /// `adb start-server` — Ensure the local adb daemon is running.
+    /// **Mutating**: `adb start-server` — Ensure the local adb daemon is running.
     public func startServer() -> Self {
-        copy(arguments: ["start-server"])
+        operation(["start-server"])
     }
 
-    /// `adb kill-server` — Stop the local adb daemon.
+    /// **Mutating**: `adb kill-server` — Stop the local adb daemon.
     public func killServer() -> Self {
-        copy(arguments: ["kill-server"])
+        operation(["kill-server"])
     }
 
     // MARK: - Device discovery
@@ -152,12 +131,12 @@ public struct Adb: RunnableCommandFamily {
     /// - Parameter long: Pass `-l` to include the device transport id and product
     ///   metadata.
     public func devices(long: Bool = false) -> Self {
-        copy(arguments: long ? ["devices", "-l"] : ["devices"])
+        operation(long ? ["devices", "-l"] : ["devices"])
     }
 
     /// `adb wait-for-device` — Block until a device is connected and available.
     public func waitForDevice() -> Self {
-        copy(arguments: ["wait-for-device"])
+        operation(["wait-for-device"])
     }
 
     /// Uses explicit `adb` arguments for operations that are not yet modelled.
@@ -169,7 +148,7 @@ public struct Adb: RunnableCommandFamily {
     /// - Parameter values: Arguments passed after the `adb` executable and any
     ///   configured `-s <serial>` prefix.
     public func rawArguments(_ values: [String]) -> Self {
-        copy(arguments: values)
+        operation(values)
     }
 
     // MARK: - App lifecycle
@@ -183,7 +162,7 @@ public struct Adb: RunnableCommandFamily {
         install(apk: apk, replace: replace, allowTestPackages: false, grantAllPermissions: false)
     }
 
-    /// `adb install [-r] [-t] [-g] <apk>` — Install an APK with explicit install options.
+    /// **Mutating**: `adb install [-r] [-t] [-g] <apk>` — Install an APK with explicit install options.
     ///
     /// - Parameters:
     ///   - apk: Path to the APK file.
@@ -198,17 +177,17 @@ public struct Adb: RunnableCommandFamily {
         if allowTestPackages { args.append("-t") }
         if grantAllPermissions { args.append("-g") }
         args.append(apk)
-        return copy(arguments: args)
+        return operation(args)
     }
 
-    /// `adb uninstall <package>` — Uninstall the given package.
+    /// **Mutating**: `adb uninstall <package>` — Uninstall the given package.
     public func uninstall(package: String) -> Self {
-        copy(arguments: ["uninstall", package])
+        operation(["uninstall", package])
     }
 
-    /// `adb shell am force-stop <package>` — Terminate the given app on the device.
+    /// **Mutating**: `adb shell am force-stop <package>` — Terminate the given app on the device.
     public func amForceStop(package: String) -> Self {
-        copy(arguments: ["shell", "am", "force-stop", package])
+        operation(["shell", "am", "force-stop", package])
     }
 
     /// `adb shell am start -n <component> [--es key value]...` — Launch an
@@ -223,7 +202,7 @@ public struct Adb: RunnableCommandFamily {
         for (key, value) in extras.sorted(by: { $0.key < $1.key }) {
             args += ["--es", key, value]
         }
-        return copy(arguments: args)
+        return operation(args)
     }
 
     /// `adb shell am start -n <component> [--es arg value]...` — Launch an
@@ -240,7 +219,7 @@ public struct Adb: RunnableCommandFamily {
         for argument in arguments {
             args += ["--es", "arg", argument]
         }
-        return copy(arguments: args)
+        return operation(args)
     }
 
     /// `adb shell am start -a android.intent.action.VIEW -d <url>` — Open a URL
@@ -250,7 +229,7 @@ public struct Adb: RunnableCommandFamily {
     ///   against an allow-list before forwarding it; ADB sends the URL through
     ///   the device shell which will tokenise on whitespace and metacharacters.
     public func amStartViewURL(_ url: String) -> Self {
-        copy(arguments: [
+        operation([
             "shell", "am", "start",
             "-a", "android.intent.action.VIEW",
             "-d", url,
@@ -262,28 +241,28 @@ public struct Adb: RunnableCommandFamily {
     /// `adb shell getprop <property>` — Read a system property, e.g. `sys.boot_completed`
     /// (`"1"` once an emulator has finished booting) or `ro.build.version.sdk`.
     public func getprop(_ property: String) -> Self {
-        copy(arguments: ["shell", "getprop", property])
+        operation(["shell", "getprop", property])
     }
 
     /// `adb shell pm list packages` — List installed packages on the device.
     public func pmListPackages() -> Self {
-        copy(arguments: ["shell", "pm", "list", "packages"])
+        operation(["shell", "pm", "list", "packages"])
     }
 
-    /// `adb shell pm grant <package> <permission>` — Grant a runtime permission.
+    /// **Mutating**: `adb shell pm grant <package> <permission>` — Grant a runtime permission.
     public func pmGrantPermission(package: String, permission: String) -> Self {
-        copy(arguments: ["shell", "pm", "grant", package, permission])
+        operation(["shell", "pm", "grant", package, permission])
     }
 
-    /// `adb shell pm revoke <package> <permission>` — Revoke a runtime permission.
+    /// **Mutating**: `adb shell pm revoke <package> <permission>` — Revoke a runtime permission.
     public func pmRevokePermission(package: String, permission: String) -> Self {
-        copy(arguments: ["shell", "pm", "revoke", package, permission])
+        operation(["shell", "pm", "revoke", package, permission])
     }
 
     /// `adb shell cmd package resolve-activity --brief <package>` — Resolve the
     /// launchable activity component for a package.
     public func resolveLaunchableActivity(package: String) -> Self {
-        copy(arguments: [
+        operation([
             "shell", "cmd", "package", "resolve-activity", "--brief", package,
         ])
     }
@@ -293,35 +272,35 @@ public struct Adb: RunnableCommandFamily {
     /// `adb shell screencap -p <remote-path>` — Capture a PNG screenshot to a
     /// path on the device.
     public func screencap(remotePath: String) -> Self {
-        copy(arguments: ["shell", "screencap", "-p", remotePath])
+        operation(["shell", "screencap", "-p", remotePath])
     }
 
     /// `adb shell screenrecord <remote-path>` — Start recording the device
     /// display to an MP4 file. The command runs until interrupted (`SIGINT`) or
     /// the recording reaches the device-imposed maximum duration.
     public func screenrecord(remotePath: String) -> Self {
-        copy(arguments: ["shell", "screenrecord", remotePath])
+        operation(["shell", "screenrecord", remotePath])
     }
 
     /// `adb shell pkill -INT <process>` — Send `SIGINT` to a process on the
     /// device by name.
     public func shellPkill(signal: String = "INT", process: String) -> Self {
-        copy(arguments: ["shell", "pkill", "-\(signal)", process])
+        operation(["shell", "pkill", "-\(signal)", process])
     }
 
     // MARK: - Input
 
     /// `adb shell input keyevent <keycode>` — Synthesize a hardware key event.
     public func inputKeyevent(_ keycode: String) -> Self {
-        copy(arguments: ["shell", "input", "keyevent", keycode])
+        operation(["shell", "input", "keyevent", keycode])
     }
 
     // MARK: - Display configuration
 
-    /// `adb shell cmd uimode night <yes|no|auto>` — Set the device's dark/light
+    /// **Mutating**: `adb shell cmd uimode night <yes|no|auto>` — Set the device's dark/light
     /// appearance mode.
     public func cmdUimodeNight(_ value: UimodeNight) -> Self {
-        copy(arguments: ["shell", "cmd", "uimode", "night", value.rawValue])
+        operation(["shell", "cmd", "uimode", "night", value.rawValue])
     }
 
     /// Values accepted by ``cmdUimodeNight(_:)``.
@@ -336,38 +315,38 @@ public struct Adb: RunnableCommandFamily {
 
     /// `adb shell pm path <package>` — Reports the installed APK path.
     public func pmPath(package: String) -> Self {
-        copy(arguments: ["shell", "pm", "path", package])
+        operation(["shell", "pm", "path", package])
     }
 
     // MARK: - Port forwarding
 
     /// `adb forward --list` — Lists every device's forwarded ports.
     public func listForwards() -> Self {
-        copy(arguments: ["forward", "--list"])
+        operation(["forward", "--list"])
     }
 
-    /// `adb forward tcp:<local> tcp:<remote>` — Forward a host TCP port to the
+    /// **Mutating**: `adb forward tcp:<local> tcp:<remote>` — Forward a host TCP port to the
     /// device.
     public func forwardTCP(localPort: Int, remotePort: Int) -> Self {
-        copy(arguments: ["forward", "tcp:\(localPort)", "tcp:\(remotePort)"])
+        operation(["forward", "tcp:\(localPort)", "tcp:\(remotePort)"])
     }
 
-    /// `adb forward --remove tcp:<local>` — Remove a previously installed TCP
+    /// **Mutating**: `adb forward --remove tcp:<local>` — Remove a previously installed TCP
     /// port forward.
     public func removeForwardTCP(localPort: Int) -> Self {
-        copy(arguments: ["forward", "--remove", "tcp:\(localPort)"])
+        operation(["forward", "--remove", "tcp:\(localPort)"])
     }
 
     // MARK: - File transfer
 
-    /// `adb push <local> <remote>` — Push a local file to the device.
+    /// **Mutating**: `adb push <local> <remote>` — Push a local file to the device.
     public func push(local: String, remote: String) -> Self {
-        copy(arguments: ["push", local, remote])
+        operation(["push", local, remote])
     }
 
     /// `adb pull <remote> <local>` — Pull a file from the device.
     public func pull(remote: String, local: String) -> Self {
-        copy(arguments: ["pull", remote, local])
+        operation(["pull", remote, local])
     }
 
     // MARK: - Shell
@@ -379,14 +358,14 @@ public struct Adb: RunnableCommandFamily {
     /// are not yet modelled. The argument is passed verbatim to the on-device
     /// shell, which will tokenise on whitespace and metacharacters.
     public func shell(_ command: String) -> Self {
-        copy(arguments: ["shell", command])
+        operation(["shell", command])
     }
 
     // MARK: - Emulator control
 
-    /// `adb emu kill` — Shut down the connected emulator.
+    /// **Mutating**: `adb emu kill` — Shut down the connected emulator.
     public func emuKill() -> Self {
-        copy(arguments: ["emu", "kill"])
+        operation(["emu", "kill"])
     }
 
     /// `adb emu geo fix <longitude> <latitude>` — Set the simulated GPS
@@ -395,44 +374,199 @@ public struct Adb: RunnableCommandFamily {
     /// > Important: The emulator console expects **longitude first**, then
     /// > latitude — the same order this method accepts.
     public func emuGeoFix(longitude: Double, latitude: Double) -> Self {
-        copy(arguments: ["emu", "geo", "fix", String(longitude), String(latitude)])
+        operation(["emu", "geo", "fix", String(longitude), String(latitude)])
     }
 
     // MARK: - Logcat
 
-    /// `adb logcat [filters]` — Stream logcat output.
+    /// `adb logcat [-c] [-d] [filters]` — Read or clear logcat output.
     ///
-    /// - Parameter filters: Optional filter specifications (e.g. `["*:E"]` for
-    ///   errors only).
-    public func logcat(filters: [String] = []) -> Self {
-        copy(arguments: ["logcat"] + filters)
+    /// - Parameters:
+    ///   - clear: Pass `-c` to clear the buffer and exit. Clearing mutates device state.
+    ///   - dump: Pass `-d` to dump the current buffer and exit instead of streaming.
+    ///   - filters: Optional filter specifications (e.g. `["*:E"]` for errors only).
+    public func logcat(clear: Bool = false, dump: Bool = false, filters: [String] = []) -> Self {
+        operation(["logcat"] + flag("-c", clear) + flag("-d", dump) + filters)
+    }
+
+    // MARK: - Server and device state
+
+    /// `adb version` — Report the adb client version.
+    public func version() -> Self {
+        operation(["version"])
+    }
+
+    /// **Mutating**: `adb reconnect` — Drop and re-establish the connection to the device.
+    public func reconnect() -> Self {
+        operation(["reconnect"])
+    }
+
+    /// `adb emu avd name` — Report the AVD name of the connected emulator.
+    public func emuAVDName() -> Self {
+        operation(["emu", "avd", "name"])
+    }
+
+    // MARK: - Additional package and file operations
+
+    /// **Mutating**: `adb shell pm clear <package>` — Delete a package's data and cache.
+    public func pmClear(package: String) -> Self {
+        operation(["shell", "pm", "clear", package])
+    }
+
+    /// **Mutating**: `adb shell rm [-f] <path>` — Remove a file on the device.
+    ///
+    /// - Parameters:
+    ///   - remotePath: Path on the device.
+    ///   - force: Pass `-f` to ignore a missing file.
+    public func removeFile(remotePath: String, force: Bool = false) -> Self {
+        operation(["shell", "rm"] + flag("-f", force) + [remotePath])
+    }
+
+    /// `adb shell cmd package resolve-activity --brief [-a <action>] [-c <category>] <package>` —
+    /// Resolve the activity an intent would launch.
+    ///
+    /// - Parameters:
+    ///   - package: Package (or component) to resolve against.
+    ///   - action: Intent action, for example `android.intent.action.MAIN`.
+    ///   - category: Intent category, for example `android.intent.category.LAUNCHER`.
+    public func resolveActivity(package: String, action: String? = nil, category: String? = nil) -> Self {
+        operation(
+            ["shell", "cmd", "package", "resolve-activity", "--brief"] + optionalOption("-a", action)
+                + optionalOption("-c", category) + [package]
+        )
+    }
+
+    /// **Mutating**: `adb install-multiple [-r] [-t] [-g] <apk>...` — Install split APKs as one package.
+    public func installMultiple(
+        apks: [String],
+        replace: Bool = false,
+        allowTestPackages: Bool = false,
+        grantAllPermissions: Bool = false
+    ) -> Self {
+        operation(
+            ["install-multiple"] + flag("-r", replace) + flag("-t", allowTestPackages) + flag("-g", grantAllPermissions) + apks
+        )
+    }
+
+    // MARK: - Activity manager
+
+    /// **Mutating**: `adb shell am start [-W] [-S] [--activity-clear-top] [--user <id>] -n <component> [extras]`.
+    ///
+    /// Typed extras keep their order, so repeated keys and mixed types are expressible.
+    ///
+    /// - Parameters:
+    ///   - component: The `package/.Activity` component name to launch.
+    ///   - wait: Pass `-W` to block until the launch completes.
+    ///   - forceStop: Pass `-S` to force-stop the target app before launching.
+    ///   - clearTop: Pass `--activity-clear-top` to finish activities above the target in its task.
+    ///   - user: Pass `--user <id>` to launch for a specific user.
+    ///   - typedExtras: Intent extras rendered in order.
+    public func amStartActivity(
+        component: String,
+        wait: Bool = false,
+        forceStop: Bool = false,
+        clearTop: Bool = false,
+        user: Int? = nil,
+        typedExtras: [AdbIntentExtra]
+    ) -> Self {
+        operation(
+            ["shell", "am", "start"] + flag("-W", wait) + flag("-S", forceStop) + flag("--activity-clear-top", clearTop)
+                + optionalOption("--user", user.map(String.init)) + ["-n", component] + typedExtras.flatMap(\.arguments)
+        )
+    }
+
+    /// **Mutating**: `adb shell am instrument -w [-r] [-e <key> <value>]... <runner>` — Run instrumentation tests.
+    ///
+    /// - Parameters:
+    ///   - runner: The `package/runner` instrumentation component.
+    ///   - wait: Pass `-w` to wait for the run to finish (the default, as `adb` would otherwise return at once).
+    ///   - raw: Pass `-r` for raw, machine-readable output.
+    ///   - arguments: Instrumentation arguments passed as `-e key value`, sorted by key.
+    public func amInstrument(
+        runner: String,
+        wait: Bool = true,
+        raw: Bool = false,
+        arguments: [String: String] = [:]
+    ) -> Self {
+        operation(
+            ["shell", "am", "instrument"] + flag("-w", wait) + flag("-r", raw)
+                + arguments.sorted(by: { $0.key < $1.key }).flatMap { ["-e", $0.key, $0.value] } + [runner]
+        )
+    }
+
+    // MARK: - Reverse port forwarding
+
+    /// **Mutating**: `adb reverse tcp:<remote> tcp:<local>` — Expose a host TCP port to the device.
+    public func reverseTCP(remotePort: Int, localPort: Int) -> Self {
+        operation(["reverse", "tcp:\(remotePort)", "tcp:\(localPort)"])
+    }
+
+    /// **Mutating**: `adb reverse --remove tcp:<remote>` — Remove a reverse port mapping.
+    public func removeReverse(remotePort: Int) -> Self {
+        operation(["reverse", "--remove", "tcp:\(remotePort)"])
+    }
+
+    // MARK: - Capture and input
+
+    /// `adb exec-out screencap -p` — Stream a PNG screenshot to stdout without a device-side file.
+    public func execOutScreencap() -> Self {
+        operation(["exec-out", "screencap", "-p"])
+    }
+
+    /// **Mutating**: `adb shell input tap <x> <y>`.
+    public func inputTap(x: Int, y: Int) -> Self {
+        operation(["shell", "input", "tap", String(x), String(y)])
+    }
+
+    /// **Mutating**: `adb shell input text <text>`.
+    ///
+    /// The text is passed verbatim. The device shell splits on whitespace, so encode spaces as
+    /// `%s` before calling.
+    public func inputText(_ text: String) -> Self {
+        operation(["shell", "input", "text", text])
+    }
+
+    /// **Mutating**: `adb shell input swipe <x1> <y1> <x2> <y2> [<duration>]`.
+    public func inputSwipe(
+        fromX: Int,
+        fromY: Int,
+        toX: Int,
+        toY: Int,
+        durationMilliseconds: Int? = nil
+    ) -> Self {
+        operation(
+            ["shell", "input", "swipe", String(fromX), String(fromY), String(toX), String(toY)]
+                + (durationMilliseconds.map { [String($0)] } ?? [])
+        )
     }
 
     // MARK: - Private
 
-    /// Sentinel optional wrapper used by ``copy(serial:arguments:)`` so callers
-    /// can distinguish "no change" (`nil`) from "explicitly clear the serial"
-    /// (`Optional.some(nil)`).
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        serial: String??? = nil,
-        arguments: [String]? = nil
-    ) -> Self {
-        let resolvedSerial: String?
-        switch serial {
-        case .some(let value):
-            resolvedSerial = value ?? nil
-        case .none:
-            resolvedSerial = self.serial
+    private func operation(_ values: [String]) -> Self {
+        modified(self) { $0.spec.arguments = values }
+    }
+}
+
+/// A typed intent extra for ``Adb/amStartActivity(component:wait:forceStop:clearTop:user:typedExtras:)``.
+public enum AdbIntentExtra: Sendable, Equatable, Hashable {
+    /// `--es <key> <value>`.
+    case string(String, String)
+    /// `--ez <key> true|false`.
+    case bool(String, Bool)
+    /// `--ei <key> <value>`.
+    case int(String, Int)
+    /// `--el <key> <value>`.
+    case long(String, Int64)
+    /// `--ef <key> <value>`.
+    case float(String, Double)
+
+    var arguments: [String] {
+        switch self {
+        case .string(let key, let value): ["--es", key, value]
+        case .bool(let key, let value): ["--ez", key, value ? "true" : "false"]
+        case .int(let key, let value): ["--ei", key, String(value)]
+        case .long(let key, let value): ["--el", key, String(value)]
+        case .float(let key, let value): ["--ef", key, String(value)]
         }
-        return Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            serial: resolvedSerial,
-            arguments: arguments ?? self.arguments
-        )
     }
 }

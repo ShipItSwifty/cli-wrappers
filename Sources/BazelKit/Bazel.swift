@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for `bazel` (or `bazelisk`): `bazel [startup options] <command> [options] [targets] [-- args]`.
 ///

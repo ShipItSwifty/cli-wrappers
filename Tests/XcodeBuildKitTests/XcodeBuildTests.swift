@@ -165,4 +165,74 @@ struct XcodeBuildTests {
         #expect(output.exitCode == 0)
     }
     #endif
+
+    @Test(
+        "New operations emit their full argv",
+        arguments: [
+            (XcodeBuild(executablePath: "xcodebuild").version(), ["-version"]),
+            (XcodeBuild(executablePath: "xcodebuild").project("A.xcodeproj").list(), ["-project", "A.xcodeproj", "-list"]),
+            (
+                XcodeBuild(executablePath: "xcodebuild").workspace("A.xcworkspace").list(json: true),
+                ["-workspace", "A.xcworkspace", "-list", "-json"]
+            ),
+            (XcodeBuild(executablePath: "xcodebuild").option(.scheme("A")).clean(), ["-scheme", "A", "clean"]),
+            (XcodeBuild(executablePath: "xcodebuild").option(.scheme("A")).analyze(), ["-scheme", "A", "analyze"]),
+            (XcodeBuild(executablePath: "xcodebuild").option(.scheme("A")).docbuild(), ["-scheme", "A", "docbuild"]),
+            (
+                XcodeBuild(executablePath: "xcodebuild").project("A.xcodeproj").resolvePackageDependencies(),
+                ["-project", "A.xcodeproj", "-resolvePackageDependencies"]
+            ),
+        ] as [(XcodeBuild, [String])]
+    )
+    func newOperations(xcodebuild: XcodeBuild, expected: [String]) {
+        #expect(xcodebuild.command().arguments == expected)
+    }
+
+    @Test func booleanAndIntegerOverloadsRenderXcodebuildValues() {
+        let arguments = XcodeBuild(executablePath: "xcodebuild")
+            .options([
+                .parallelTestingEnabled(true),
+                .enableCodeCoverage(false),
+                .parallelTestingWorkerCount(4),
+                .jobs(8),
+                .parallelTestingEnabled("YES"),
+            ])
+            .command()
+            .arguments
+        #expect(
+            arguments == [
+                "-parallel-testing-enabled", "YES",
+                "-enableCodeCoverage", "NO",
+                "-parallel-testing-worker-count", "4",
+                "-jobs", "8",
+                "-parallel-testing-enabled", "YES",
+            ])
+    }
+
+    @Test func createXCFrameworkWithoutInputsDoesNotTrap() {
+        let arguments = XcodeBuild(executablePath: "xcodebuild")
+            .createXCFramework(inputs: [], output: "Out.xcframework")
+            .command()
+            .arguments
+        #expect(arguments == ["-create-xcframework", "-output", "Out.xcframework"])
+    }
+
+    @Test func selectingAnOperationReplacesThePreviousOne() {
+        let arguments = XcodeBuild(executablePath: "xcodebuild").option(.scheme("A")).test().analyze().command().arguments
+        #expect(arguments == ["-scheme", "A", "analyze"])
+    }
+
+    @Test func containerReplacesThePreviousContainer() {
+        let arguments = XcodeBuild(executablePath: "xcodebuild").project("A.xcodeproj").workspace("A.xcworkspace").command().arguments
+        #expect(arguments == ["-workspace", "A.xcworkspace"])
+    }
+
+    @Test func updatingConfigurationAndOutputRedirectionSurviveFurtherBuilding() {
+        let command = XcodeBuild(executablePath: "xcodebuild")
+            .updatingConfiguration { $0.env("A", "1") }
+            .settingStdoutDestination(.discard)
+            .test()
+            .command()
+        #expect(command.environmentOverrides == ["A": "1"])
+    }
 }

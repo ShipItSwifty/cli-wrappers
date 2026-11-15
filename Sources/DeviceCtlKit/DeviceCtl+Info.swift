@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // `device info`: read-only queries about one device.
 extension DeviceCtl {
@@ -69,12 +69,14 @@ extension DeviceCtl {
         scale: Double? = nil,
         destination: String? = nil
     ) -> Self {
-        deviceOperation(
-            ["device", "info", "appIcon"], device: device,
-            optionalOption("--app-bundle-id", bundleID) + optionalOption("--app-path", appPath)
-                + (allowPlaceholder.map { ["--allow-placeholder", $0 ? "true" : "false"] } ?? [])
-                + optionalNumber("--width", width) + optionalNumber("--height", height) + optionalNumber("--scale", scale)
-                + optionalOption("--destination", destination))
+        var options = optionalOption("--app-bundle-id", bundleID)
+        options += optionalOption("--app-path", appPath)
+        options += allowPlaceholder.map { ["--allow-placeholder", $0 ? "true" : "false"] } ?? []
+        options += optionalNumber("--width", width)
+        options += optionalNumber("--height", height)
+        options += optionalNumber("--scale", scale)
+        options += optionalOption("--destination", destination)
+        return deviceOperation(["device", "info", "appIcon"], device: device, options)
     }
 
     /// `device info appResize`: the state of the active resizable app session. Fails without one.

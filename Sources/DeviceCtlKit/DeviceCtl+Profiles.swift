@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // `device profile` and `device pairings`.
 extension DeviceCtl {

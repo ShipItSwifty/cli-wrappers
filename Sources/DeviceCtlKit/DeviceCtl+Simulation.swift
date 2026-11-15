@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // `device simulate`: locations, status bar overrides, and biometric events.
 extension DeviceCtl {

@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // Commands that describe or manage the host's view of devices: `list`, `manage`, and `diagnose`.
 extension DeviceCtl {

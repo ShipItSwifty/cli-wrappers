@@ -35,17 +35,24 @@ let wrappers: [(name: String, dependencies: [Target.Dependency])] = [
     ("BazelKit", []),
 ]
 
+/// `swift-docc-plugin` (and its SymbolKit dependency) is only needed to build the documentation
+/// site, so it is declared only when `docs.yml` or a local docs build sets `CLI_WRAPPERS_DOCS`.
+/// Consumers resolve and clone neither.
+var dependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/maniramezan/SwiftyShell.git", from: "0.7.0"),
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
+]
+if Context.environment["CLI_WRAPPERS_DOCS"] != nil {
+    dependencies.append(.package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0"))
+}
+
 let package = Package(
     name: "CLIWrappers",
     platforms: [.macOS(.v15)],
     products: wrappers.map { .library(name: $0.name, targets: [$0.name]) },
-    dependencies: [
-        .package(url: "https://github.com/maniramezan/SwiftyShell.git", from: "0.7.0"),
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.5.0"),
-    ],
+    dependencies: dependencies,
     targets: [
-        .target(name: "WrapperSupport", dependencies: [swiftyShell, logging]),
+        .target(name: "WrapperSupport", dependencies: [swiftyShell]),
         .testTarget(name: "WrapperSupportTests", dependencies: ["WrapperSupport"]),
     ]
         + wrappers.map { .target(name: $0.name, dependencies: $0.dependencies + ["WrapperSupport", swiftyShell]) }

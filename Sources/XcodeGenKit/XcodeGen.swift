@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyShell
+internal import WrapperSupport
 
 /// A fluent wrapper for the `xcodegen` command.
 ///
@@ -27,91 +28,61 @@ import SwiftyShell
 ///     .run()
 /// ```
 public struct XcodeGen: RunnableCommandFamily {
-
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-
-    /// The subcommand to run (e.g. `generate`, `dump`, `cache`).
-    public let subcommand: String?
-
-    /// Typed options for the xcodegen invocation.
-    public let options: [XcodeGenOption]
+    private var commandSpec: CommandSpec
+    private var subcommand: String?
+    private var options: [XcodeGenOption] = []
 
     /// The shell context used when running this command family.
-    public var context: ShellContext { config.context }
+    public var context: ShellContext { commandSpec.config.context }
 
     // MARK: - Init
 
-    /// Creates an `XcodeGen` command family bound to a shell context.
-    public init(context: ShellContext = .init()) {
-        self.config = ToolConfiguration(context: context)
-        self.stdoutDestination = .capture
-        self.stderrDestination = .capture
-        self.subcommand = nil
-        self.options = []
-    }
-
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        subcommand: String?,
-        options: [XcodeGenOption]
-    ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.subcommand = subcommand
-        self.options = options
+    /// Creates an `xcodegen` command family bound to a shell context.
+    ///
+    /// - Parameter executablePath: The executable to run, resolved through `PATH` when it has no slash.
+    public init(context: ShellContext = .init(), executablePath: String = "xcodegen") {
+        self.commandSpec = CommandSpec(executable: executablePath, context: context)
     }
 
     // MARK: - RunnableCommandFamily
 
     /// Returns a new value with updated shared tool configuration.
-    public func updatingConfiguration(
-        _ update: (ToolConfiguration) -> ToolConfiguration
-    ) -> Self {
-        copy(config: update(config))
+    public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
+        modified(self) { $0.commandSpec.config = update($0.commandSpec.config) }
     }
 
     /// Redirects stdout for the built `xcodegen` command.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination)
+        modified(self) { $0.commandSpec.stdout = destination }
     }
 
     /// Redirects stderr for the built `xcodegen` command.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination)
+        modified(self) { $0.commandSpec.stderr = destination }
     }
 
     // MARK: - Subcommands
 
     /// `xcodegen generate` — Generate an Xcode project from a spec file.
     public func generate() -> Self {
-        copy(subcommand: "generate")
+        selecting("generate")
     }
 
     /// `xcodegen dump` — Dump the resolved project spec to stdout.
     public func dump() -> Self {
-        copy(subcommand: "dump")
+        selecting("dump")
     }
 
     /// `xcodegen cache` — Write or check the cache.
     public func cache() -> Self {
-        copy(subcommand: "cache")
+        selecting("cache")
     }
 
     // MARK: - Options
 
     /// Appends a typed `xcodegen` option.
     public func option(_ option: XcodeGenOption) -> Self {
-        copy(options: options + [option])
+        modified(self) { $0.options.append(option) }
     }
 
     /// Sets the project spec file path (`--spec <path>`).
@@ -138,37 +109,12 @@ public struct XcodeGen: RunnableCommandFamily {
 
     /// Builds the raw `xcodegen` command.
     public func command() -> Command {
-        var args: [String] = []
-
-        if let subcommand {
-            args.append(subcommand)
-        }
-
-        args += options.flatMap(\.arguments)
-
-        let base = Command("xcodegen")
-            .args(args)
-            .stdout(stdoutDestination)
-            .stderr(stderrDestination)
-
-        return config.apply(to: base)
+        modified(commandSpec) {
+            $0.arguments = (subcommand.map { [$0] } ?? []) + options.flatMap(\.arguments)
+        }.command()
     }
 
-    // MARK: - Private
-
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        subcommand: String?? = .none,
-        options: [XcodeGenOption]? = nil
-    ) -> Self {
-        Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            subcommand: subcommand != .none ? subcommand! : self.subcommand,
-            options: options ?? self.options
-        )
+    private func selecting(_ name: String) -> Self {
+        modified(self) { $0.subcommand = name }
     }
 }

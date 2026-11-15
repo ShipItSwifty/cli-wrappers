@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for CocoaPods' `pod`, run by React Native, Flutter, and KMP iOS hosts before
 /// `xcodebuild` builds the generated workspace.
@@ -56,7 +56,7 @@ public struct Pod: RunnableCommandFamily {
 
     // MARK: - Operations
 
-    /// `pod install`.
+    /// **Mutating**: `pod install`.
     ///
     /// - Parameters:
     ///   - repoUpdate: Update spec repos first (`--repo-update`).
@@ -69,17 +69,17 @@ public struct Pod: RunnableCommandFamily {
         )
     }
 
-    /// `pod update [pods]`; every pod when empty.
+    /// **Mutating**: `pod update [pods]`; every pod when empty.
     public func update(_ pods: [String] = [], repoUpdate: Bool = true) -> Self {
         operation(["update"] + pods + flag("--no-repo-update", !repoUpdate))
     }
 
-    /// `pod repo update`.
+    /// **Mutating**: `pod repo update`.
     public func repoUpdate() -> Self {
         operation(["repo", "update"])
     }
 
-    /// `pod deintegrate`.
+    /// **Mutating**: `pod deintegrate`.
     public func deintegrate() -> Self {
         operation(["deintegrate"])
     }

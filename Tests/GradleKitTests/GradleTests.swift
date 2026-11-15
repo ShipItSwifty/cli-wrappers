@@ -125,4 +125,52 @@ struct GradleTests {
         let task = GradleTask.bundle(flavor: "paid", variant: "debug")
         #expect(task.name == "bundlePaidDebug")
     }
+
+    @Test("gradlew next to the project directory wins when it exists")
+    func gradlewResolution() {
+        let command = Gradle(fileExists: { $0 == "./android/gradlew" })
+            .projectDir("./android")
+            .task(.assembleRelease)
+            .command()
+        #expect(command.executableName.hasSuffix("android/gradlew"))
+        #expect(command.workingDirectoryOverride == "./android")
+    }
+
+    @Test("Falls back to gradle on PATH when there is no wrapper")
+    func gradleFallback() {
+        #expect(Gradle(fileExists: { _ in false }).task(.clean).command().executableName == "gradle")
+    }
+
+    @Test("An explicit executable beats the wrapper lookup")
+    func explicitExecutable() {
+        #expect(Gradle(executablePath: "/opt/gradle", fileExists: { _ in true }).task(.clean).command().executableName == "/opt/gradle")
+        #expect(
+            Gradle(fileExists: { _ in true }).settingGradlewPath("/x/gradlew").task(.clean).command().executableName == "/x/gradlew")
+    }
+
+    @Test("Resolution never consults the real file system")
+    func resolutionIsInjected() {
+        let command = Gradle(fileExists: { _ in false }).projectDir("/definitely/not/here").task(.clean).command()
+        #expect(command.executableName == "gradle")
+    }
+
+    @Test("An explicit working directory wins over the project directory")
+    func explicitWorkingDirectory() {
+        let command = Gradle(fileExists: { _ in false })
+            .projectDir("./android")
+            .updatingConfiguration { $0.workingDirectory("/elsewhere") }
+            .task(.clean)
+            .command()
+        #expect(command.workingDirectoryOverride == "/elsewhere")
+    }
+
+    @Test("Flags, JVM args, properties, then tasks")
+    func argumentOrder() {
+        let command = Gradle(fileExists: { _ in false })
+            .task(.clean)
+            .jvmArgs("-Xmx2g")
+            .flag(.noDaemon)
+            .command()
+        #expect(command.arguments == ["--no-daemon", "-Dorg.gradle.jvmargs=-Xmx2g", "clean"])
+    }
 }

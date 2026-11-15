@@ -53,4 +53,28 @@ struct AndroidCLITests {
                 """)
         #expect(elements == [.init(text: "Run", resourceId: "run", center: "[1,2]", offScreen: false)])
     }
+
+    @Test("SDK path can be set and cleared after construction")
+    func settingAndClearingSDKPath() {
+        let cli = AndroidCLI(executablePath: "android")
+        #expect(cli.settingSDKPath("/sdk").version().command().arguments == ["--sdk=/sdk", "--version"])
+        #expect(cli.settingSDKPath("/sdk").settingSDKPath(nil).version().command().arguments == ["--version"])
+    }
+
+    @Test("Executable can be replaced and survives selecting operations")
+    func settingExecutable() {
+        let command = AndroidCLI().settingExecutablePath("/opt/android").help(command: ["run"]).command()
+        #expect(command.executableName == "/opt/android")
+        #expect(command.arguments == ["help", "run"])
+    }
+
+    @Test("Updating the base keeps the whole configuration")
+    func keepsConfiguration() {
+        let command = AndroidCLI()
+            .updatingConfiguration { $0.env("A", "1") }
+            .update(url: "https://example.com/feed")
+            .command()
+        #expect(command.environmentOverrides == ["A": "1"])
+        #expect(command.arguments == ["update", "--url=https://example.com/feed"])
+    }
 }

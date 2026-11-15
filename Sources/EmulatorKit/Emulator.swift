@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A fluent wrapper for the Android `emulator` command-line tool.
 ///
@@ -18,24 +18,10 @@ import WrapperSupport
 ///     .run()
 /// ```
 public struct Emulator: RunnableCommandFamily {
-
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-
-    /// Arguments for the `emulator` command.
-    public let arguments: [String]
-
-    /// The `emulator` executable to invoke. See ``init(context:executablePath:)`` for resolution.
-    public let executablePath: String
+    private var spec: CommandSpec
 
     /// The shell context used when running this command family.
-    public var context: ShellContext { config.context }
+    public var context: ShellContext { spec.config.context }
 
     // MARK: - Init
 
@@ -48,25 +34,10 @@ public struct Emulator: RunnableCommandFamily {
     ///     environment if it exists — the SDK does not put `emulator/` on `PATH` — and otherwise
     ///     falls back to `emulator` on `PATH`.
     public init(context: ShellContext = .init(), executablePath: String? = nil) {
-        self.config = ToolConfiguration(context: context)
-        self.stdoutDestination = .capture
-        self.stderrDestination = .capture
-        self.arguments = []
-        self.executablePath = executablePath ?? Self.resolveExecutable(environment: context.environment)
-    }
-
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        arguments: [String],
-        executablePath: String
-    ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.arguments = arguments
-        self.executablePath = executablePath
+        self.spec = CommandSpec(
+            executable: executablePath ?? Self.resolveExecutable(environment: context.environment),
+            context: context
+        )
     }
 
     /// Resolves the SDK's `emulator` binary from `ANDROID_HOME` / `ANDROID_SDK_ROOT`, falling back
@@ -81,34 +52,28 @@ public struct Emulator: RunnableCommandFamily {
     // MARK: - RunnableCommandFamily
 
     /// Returns a new value with updated shared tool configuration.
-    public func updatingConfiguration(
-        _ update: (ToolConfiguration) -> ToolConfiguration
-    ) -> Self {
-        copy(config: update(config), arguments: arguments)
+    public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
+        modified(self) { $0.spec.config = update($0.spec.config) }
     }
 
     /// Redirects stdout.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination, arguments: arguments)
+        modified(self) { $0.spec.stdout = destination }
     }
 
     /// Redirects stderr.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination, arguments: arguments)
+        modified(self) { $0.spec.stderr = destination }
     }
 
     /// Builds the raw `emulator` command.
     public func command() -> Command {
-        let base = Command(executablePath)
-            .args(arguments)
-            .stdout(stdoutDestination)
-            .stderr(stderrDestination)
-        return config.apply(to: base)
+        spec.command()
     }
 
     // MARK: - Subcommands
 
-    /// `emulator -avd <name> [options]` — Start an AVD.
+    /// **Mutating**: `emulator -avd <name> [options]` — Start an AVD.
     ///
     /// - Parameters:
     ///   - avd: AVD name (as returned by ``list()`` or `avdmanager list avd`).
@@ -142,29 +107,18 @@ public struct Emulator: RunnableCommandFamily {
         if wipeData { args.append("-wipe-data") }
         if readOnly { args.append("-read-only") }
         if let port { args += ["-port", String(port)] }
-        return copy(arguments: args + additionalArguments)
+        return operation(args + additionalArguments)
     }
 
     /// `emulator -list-avds` — List all available AVDs.
     public func list() -> Self {
-        copy(arguments: ["-list-avds"])
+        operation(["-list-avds"])
     }
 
     // MARK: - Private
 
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        arguments: [String]
-    ) -> Self {
-        Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            arguments: arguments,
-            executablePath: executablePath
-        )
+    private func operation(_ values: [String]) -> Self {
+        modified(self) { $0.spec.arguments = values }
     }
 }
 

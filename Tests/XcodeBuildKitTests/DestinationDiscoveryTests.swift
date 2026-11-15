@@ -13,14 +13,13 @@ struct DestinationDiscoveryTests {
 
     @Test("Parses iOS Simulator destination with OS and id")
     func parsesSimulatorDestination() {
-        let discoverer = DestinationDiscovery(shell: .init())
         let output = """
             Available destinations for the "MyApp" scheme:
                 { platform:iOS Simulator, id:ABCD-1234, OS:18.2, name:iPhone 16 Pro }
                 { platform:iOS Simulator, id:EFGH-5678, OS:18.2, name:iPhone 16 }
             """
 
-        let destinations = discoverer.parseDestinations(from: output)
+        let destinations = DestinationDiscovery.parseDestinations(from: output)
 
         #expect(destinations.count == 2)
         // Sorted alphabetically by name within simulators
@@ -34,12 +33,11 @@ struct DestinationDiscoveryTests {
 
     @Test("Parses physical device destination without OS")
     func parsesPhysicalDeviceDestination() {
-        let discoverer = DestinationDiscovery(shell: .init())
         let output = """
                 { platform:iOS, id:00008110-0012345600AA001E, name:My iPhone }
             """
 
-        let destinations = discoverer.parseDestinations(from: output)
+        let destinations = DestinationDiscovery.parseDestinations(from: output)
 
         #expect(destinations.count == 1)
         #expect(destinations[0].name == "My iPhone")
@@ -51,13 +49,12 @@ struct DestinationDiscoveryTests {
 
     @Test("Simulators appear before physical devices in sorted output")
     func simulatorsAppearBeforeDevices() {
-        let discoverer = DestinationDiscovery(shell: .init())
         let output = """
                 { platform:iOS, id:PHONE-ID, name:My iPhone }
                 { platform:iOS Simulator, id:SIM-ID, OS:18.0, name:iPhone 16 }
             """
 
-        let destinations = discoverer.parseDestinations(from: output)
+        let destinations = DestinationDiscovery.parseDestinations(from: output)
 
         #expect(destinations.count == 2)
         #expect(destinations[0].isSimulator, "Simulator should sort before physical device")
@@ -66,13 +63,12 @@ struct DestinationDiscoveryTests {
 
     @Test("Skips destination blocks that contain an error key")
     func skipsErrorBlocks() {
-        let discoverer = DestinationDiscovery(shell: .init())
         let output = """
                 { platform:iOS Simulator, id:VALID-ID, OS:18.2, name:iPhone 16 }
                 { platform:iOS Simulator, id:BAD-ID, OS:17.0, name:iPhone 15, error:device unavailable }
             """
 
-        let destinations = discoverer.parseDestinations(from: output)
+        let destinations = DestinationDiscovery.parseDestinations(from: output)
 
         #expect(destinations.count == 1)
         #expect(destinations[0].name == "iPhone 16")
@@ -80,10 +76,9 @@ struct DestinationDiscoveryTests {
 
     @Test("Returns empty array when output has no destination blocks")
     func returnsEmptyForNoBlocks() {
-        let discoverer = DestinationDiscovery(shell: .init())
         let output = "xcodebuild: error: -scheme MyApp requires a workspace or project"
 
-        let destinations = discoverer.parseDestinations(from: output)
+        let destinations = DestinationDiscovery.parseDestinations(from: output)
 
         #expect(destinations.isEmpty)
     }
@@ -96,7 +91,26 @@ struct DestinationDiscoveryTests {
             os: "18.2",
             udid: "ABCD-1234"
         )
+        #expect(dest.destinationString == "platform=iOS Simulator,id=ABCD-1234")
+    }
+
+    @Test("destinationString falls back to name and OS without a UDID")
+    func destinationStringWithoutUDID() {
+        let dest = XcodebuildDestination(platform: "iOS Simulator", name: "iPhone 16 Pro", os: "18.2")
         #expect(dest.destinationString == "platform=iOS Simulator,name=iPhone 16 Pro,OS=18.2")
+    }
+
+    @Test("destinationString disambiguates same-named simulators by UDID")
+    func destinationStringIsUnambiguous() {
+        let first = XcodebuildDestination(platform: "iOS Simulator", name: "iPhone 16", os: "18.2", udid: "AAAA")
+        let second = XcodebuildDestination(platform: "iOS Simulator", name: "iPhone 16", os: "18.2", udid: "BBBB")
+        #expect(first.destinationString != second.destinationString)
+    }
+
+    @Test("Names containing commas survive field splitting")
+    func parsesNamesWithCommas() {
+        let output = "{ platform:iOS Simulator, id:X, OS:18.2, name:iPad (A16, 11-inch) }"
+        #expect(DestinationDiscovery.parseDestinations(from: output).first?.name == "iPad (A16, 11-inch)")
     }
 
     @Test("destinationString produces correct format for physical device (no OS)")
@@ -107,6 +121,6 @@ struct DestinationDiscoveryTests {
             os: nil,
             udid: "00008110"
         )
-        #expect(dest.destinationString == "platform=iOS,name=My iPhone")
+        #expect(dest.destinationString == "platform=iOS,id=00008110")
     }
 }

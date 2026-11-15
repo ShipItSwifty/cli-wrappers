@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyShell
+internal import WrapperSupport
 
 /// A typed, immutable wrapper around Google's preview `android` command-line tool (AndroidCLI).
 ///
@@ -36,21 +37,10 @@ import SwiftyShell
 /// let elements = try AndroidCLIOutputParser.layoutElements(from: json)
 /// ```
 public struct AndroidCLI: RunnableCommandFamily {
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-    /// Subcommand arguments, emitted after the global `--sdk` option.
-    public let arguments: [String]
-    /// The `android` executable to invoke. Defaults to `android` on `PATH`.
-    public let executablePath: String
-    /// Optional Android SDK root, passed as the global `--sdk=<path>` option.
-    public let sdkPath: String?
+    private var spec: CommandSpec
 
     /// The shell context used when running this command family.
-    public var context: ShellContext { config.context }
+    public var context: ShellContext { spec.config.context }
 
     /// Creates an AndroidCLI command family bound to a shell context.
     ///
@@ -63,72 +53,50 @@ public struct AndroidCLI: RunnableCommandFamily {
         executablePath: String = "android",
         sdkPath: String? = nil
     ) {
-        self.config = ToolConfiguration(context: context)
-        self.stdoutDestination = .capture
-        self.stderrDestination = .capture
-        self.arguments = []
-        self.executablePath = executablePath
-        self.sdkPath = sdkPath
-    }
-
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        arguments: [String],
-        executablePath: String,
-        sdkPath: String?
-    ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.arguments = arguments
-        self.executablePath = executablePath
-        self.sdkPath = sdkPath
+        self.spec = CommandSpec(executable: executablePath, context: context)
+        self = settingSDKPath(sdkPath)
     }
 
     // MARK: - Configuration
 
     /// Returns a new value with updated shared tool configuration.
     public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
-        copy(config: update(config))
+        modified(self) { $0.spec.config = update($0.spec.config) }
     }
 
     /// Redirects stdout for built commands.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination)
+        modified(self) { $0.spec.stdout = destination }
     }
 
     /// Redirects stderr for built commands.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination)
+        modified(self) { $0.spec.stderr = destination }
     }
 
     /// Returns a copy that invokes the given `android` executable.
-    public func settingExecutablePath(_ path: String) -> Self { copy(executablePath: path) }
+    public func settingExecutablePath(_ path: String) -> Self {
+        modified(self) { $0.spec.executable = path }
+    }
 
     /// Returns a copy that passes `--sdk=<path>`, or omits it when `path` is `nil`.
-    public func settingSDKPath(_ path: String?) -> Self { copy(sdkPath: path) }
+    public func settingSDKPath(_ path: String?) -> Self {
+        modified(self) { $0.spec.globalArguments = path.map { ["--sdk=\($0)"] } ?? [] }
+    }
 
     // MARK: - RunnableCommandFamily
 
     /// Builds the raw command: `<executable> [--sdk=<path>] <arguments…>`.
     public func command() -> Command {
-        var allArguments: [String] = []
-        if let sdkPath { allArguments.append("--sdk=\(sdkPath)") }
-        allArguments += arguments
-        return config.apply(
-            to: Command(executablePath)
-                .args(allArguments)
-                .stdout(stdoutDestination)
-                .stderr(stderrDestination)
-        )
+        spec.command()
     }
 
     // MARK: - Generic
 
     /// Replaces the subcommand arguments verbatim. Use for commands not modeled by this type.
-    public func rawArguments(_ arguments: [String]) -> Self { copy(arguments: arguments) }
+    public func rawArguments(_ arguments: [String]) -> Self {
+        modified(self) { $0.spec.arguments = arguments }
+    }
 
     /// `android --version`
     public func version() -> Self { rawArguments(["--version"]) }
@@ -139,25 +107,5 @@ public struct AndroidCLI: RunnableCommandFamily {
     /// `android update [--url=<url>]` — Update AndroidCLI itself. **Mutating.**
     public func update(url: String? = nil) -> Self {
         rawArguments(["update"] + (url.map { ["--url=\($0)"] } ?? []))
-    }
-
-    // MARK: - Private
-
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        arguments: [String]? = nil,
-        executablePath: String? = nil,
-        sdkPath: String?? = .none
-    ) -> Self {
-        Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            arguments: arguments ?? self.arguments,
-            executablePath: executablePath ?? self.executablePath,
-            sdkPath: sdkPath ?? self.sdkPath
-        )
     }
 }

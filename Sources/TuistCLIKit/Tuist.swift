@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for the `tuist` CLI, which generates Xcode projects from Swift manifests.
 ///
@@ -71,12 +71,12 @@ public struct Tuist: RunnableCommandFamily {
 
     // MARK: - Operations
 
-    /// `tuist install`: resolves external dependencies declared in `Tuist/Package.swift`.
+    /// **Mutating**: `tuist install`: resolves external dependencies declared in `Tuist/Package.swift`.
     public func install(update: Bool = false) -> Self {
         operation(["install"] + flag("--update", update))
     }
 
-    /// `tuist generate`; `open: false` passes `--no-open`.
+    /// **Mutating**: `tuist generate`; `open: false` passes `--no-open`.
     ///
     /// - Parameter focusTargets: Targets to focus on; all targets when empty.
     public func generate(open: Bool = false, binaryCache: Bool? = nil, focusTargets: [String] = []) -> Self {
@@ -97,7 +97,7 @@ public struct Tuist: RunnableCommandFamily {
         operation(["test"] + optionalOption("--test-plan", testPlan), positionals: scheme.map { [$0] } ?? [])
     }
 
-    /// `tuist clean [categories]`; everything when empty.
+    /// **Mutating**: `tuist clean [categories]`; everything when empty.
     public func clean(_ categories: [String] = []) -> Self {
         operation(["clean"], positionals: categories)
     }

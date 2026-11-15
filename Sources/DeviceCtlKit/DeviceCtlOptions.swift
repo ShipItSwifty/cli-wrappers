@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // MARK: - Table output
 

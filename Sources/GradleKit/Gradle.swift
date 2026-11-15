@@ -1,14 +1,20 @@
 import Foundation
 import SwiftyShell
+internal import WrapperSupport
 
 /// A fluent wrapper for `./gradlew` (Gradle Wrapper) invocations.
+///
+/// **Mutating**: Gradle tasks build, write into the project's `build` directories and the Gradle
+/// user home, and can publish artifacts or install onto devices, depending on the task selected.
 ///
 /// Follows the same `RunnableCommandFamily` pattern as `XcodeBuild` and `Xcrun`.
 /// All shell execution goes through the injected `ShellContext`.
 ///
 /// ## Resolution Order for the gradlew executable
-/// 1. `gradlewPath` set explicitly via `settingGradlewPath(_:)`
-/// 2. `./gradlew` relative to `projectDir` (or current directory)
+/// 1. `executablePath` passed to ``init(context:executablePath:fileExists:)``, or a path set later
+///    with ``settingGradlewPath(_:)``
+/// 2. `./gradlew` relative to `projectDir` (or current directory), checked with the injected
+///    `fileExists` predicate
 /// 3. `gradle` on `PATH` as a fallback
 ///
 /// ## Usage
@@ -42,221 +48,145 @@ import SwiftyShell
 ///     .run()
 /// ```
 public struct Gradle: RunnableCommandFamily {
-
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-
-    /// Ordered list of Gradle tasks to execute.
-    public let tasks: [GradleTask]
-
-    /// `-P` properties passed to every invocation.
-    public let properties: [GradleProperty]
-
-    /// Flags (e.g. `--no-daemon`, `--build-cache`).
-    public let flags: [GradleFlag]
-
-    /// Explicit path to the `gradlew` script. Auto-detected when `nil`.
-    public let gradlewPath: String?
-
-    /// Project directory containing the root `build.gradle(.kts)`.
-    public let projectDir: String?
-
-    /// JVM arguments passed via `-Dorg.gradle.jvmargs`.
-    public let jvmArgs: String?
+    private var spec: CommandSpec
+    private var taskList: [GradleTask] = []
+    private var propertyList: [GradleProperty] = []
+    private var flagList: [GradleFlag] = []
+    private var explicitGradlewPath: String?
+    private var projectDirectory: String?
+    private var jvmArguments: String?
+    private let fileExists: @Sendable (String) -> Bool
 
     /// The shell context used when running this command family.
-    public var context: ShellContext { config.context }
+    public var context: ShellContext { spec.config.context }
 
     // MARK: - Init
 
     /// Creates a `Gradle` command family bound to a shell context.
-    public init(context: ShellContext = .init()) {
-        self.config = ToolConfiguration(context: context)
-        self.stdoutDestination = .capture
-        self.stderrDestination = .capture
-        self.tasks = []
-        self.properties = []
-        self.flags = []
-        self.gradlewPath = nil
-        self.projectDir = nil
-        self.jvmArgs = nil
-    }
-
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        tasks: [GradleTask],
-        properties: [GradleProperty],
-        flags: [GradleFlag],
-        gradlewPath: String?,
-        projectDir: String?,
-        jvmArgs: String?
+    ///
+    /// - Parameters:
+    ///   - context: Shell execution context.
+    ///   - executablePath: Explicit `gradlew` (or `gradle`) path. When `nil`, `./gradlew` under the
+    ///     project directory is used if it exists, else `gradle` on `PATH`.
+    ///   - fileExists: Predicate used to look for `gradlew`. Injected so tests never touch the
+    ///     file system.
+    public init(
+        context: ShellContext = .init(),
+        executablePath: String? = nil,
+        fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
     ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.tasks = tasks
-        self.properties = properties
-        self.flags = flags
-        self.gradlewPath = gradlewPath
-        self.projectDir = projectDir
-        self.jvmArgs = jvmArgs
+        self.spec = CommandSpec(executable: "gradle", context: context)
+        self.explicitGradlewPath = executablePath
+        self.fileExists = fileExists
     }
 
     // MARK: - Fluent API
 
     /// Returns a new value with updated shared tool configuration.
-    public func updatingConfiguration(
-        _ update: (ToolConfiguration) -> ToolConfiguration
-    ) -> Self {
-        copy(config: update(config))
+    public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
+        modified(self) { $0.spec.config = update($0.spec.config) }
     }
 
     /// Redirects stdout for the built `gradlew` command.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination)
+        modified(self) { $0.spec.stdout = destination }
     }
 
     /// Redirects stderr for the built `gradlew` command.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination)
+        modified(self) { $0.spec.stderr = destination }
     }
 
     /// Appends a Gradle task (e.g. `.assembleRelease`, `.bundleRelease`).
     public func task(_ task: GradleTask) -> Self {
-        copy(tasks: tasks + [task])
+        modified(self) { $0.taskList.append(task) }
     }
 
     /// Appends multiple Gradle tasks.
     public func tasks(_ values: [GradleTask]) -> Self {
-        copy(tasks: tasks + values)
+        modified(self) { $0.taskList += values }
     }
 
     /// Appends a `-P` project property.
     public func property(_ property: GradleProperty) -> Self {
-        copy(properties: properties + [property])
+        modified(self) { $0.propertyList.append(property) }
     }
 
     /// Appends multiple `-P` project properties.
     public func properties(_ values: [GradleProperty]) -> Self {
-        copy(properties: properties + values)
+        modified(self) { $0.propertyList += values }
     }
 
     /// Appends a Gradle flag (e.g. `.noDaemon`, `.buildCache`).
     public func flag(_ flag: GradleFlag) -> Self {
-        copy(flags: flags + [flag])
+        modified(self) { $0.flagList.append(flag) }
     }
 
     /// Appends multiple Gradle flags.
     public func flags(_ values: [GradleFlag]) -> Self {
-        copy(flags: flags + values)
+        modified(self) { $0.flagList += values }
     }
 
     /// Sets an explicit path to the `gradlew` script.
     /// When nil (default), the wrapper is auto-detected.
     public func settingGradlewPath(_ path: String?) -> Self {
-        copy(gradlewPath: path)
+        modified(self) { $0.explicitGradlewPath = path }
     }
 
     /// Sets the Gradle project directory.
     /// Defaults to the current working directory when nil.
     public func projectDir(_ dir: String) -> Self {
-        copy(projectDir: dir)
+        modified(self) { $0.projectDirectory = dir }
     }
 
     /// Sets JVM arguments via `-Dorg.gradle.jvmargs`.
     public func jvmArgs(_ args: String) -> Self {
-        copy(jvmArgs: args)
+        modified(self) { $0.jvmArguments = args }
     }
 
     // MARK: - RunnableCommandFamily
 
     /// Builds the raw `gradlew` (or `gradle`) command.
     public func command() -> Command {
-        let executable = resolveGradlew()
-        var args: [String] = []
+        modified(spec) { built in
+            built.executable = resolveGradlew()
 
-        // Flags come first (e.g. --no-daemon)
-        args += flags.flatMap(\.arguments)
+            // Flags come first (e.g. --no-daemon), then the JVM args system property, `-P`
+            // properties, and task names each followed by their task-level options (`--tests`).
+            var arguments = flagList.flatMap(\.arguments)
+            if let jvmArguments {
+                arguments.append("-Dorg.gradle.jvmargs=\(jvmArguments)")
+            }
+            arguments += propertyList.map(\.argument)
+            arguments += taskList.flatMap(\.arguments)
+            built.arguments = arguments
 
-        // JVM args as system property
-        if let jvmArgs {
-            args += ["-Dorg.gradle.jvmargs=\(jvmArgs)"]
-        }
-
-        // -P properties
-        args += properties.map(\.argument)
-
-        // Task names, each followed by its task-level options (e.g. `--tests`)
-        args += tasks.flatMap(\.arguments)
-
-        var base = Command(executable)
-            .args(args)
-            .stdout(stdoutDestination)
-            .stderr(stderrDestination)
-
-        // Gradle resolves its project root (settings.gradle) from the process's working
-        // directory, not from the wrapper script's location. When projectDir points somewhere
-        // other than the process cwd (e.g. a React Native project's `./android` subdirectory,
-        // with the Shipfile at the RN root), the invocation must run with that directory as its
-        // cwd or Gradle reports "does not contain a Gradle build" even though the wrapper was
-        // found correctly.
-        if let projectDir {
-            base = base.workingDirectory(projectDir)
-        }
-
-        return config.apply(to: base)
+            // Gradle resolves its project root (settings.gradle) from the process's working
+            // directory, not from the wrapper script's location. When projectDir points somewhere
+            // other than the process cwd (e.g. a React Native project's `./android` subdirectory),
+            // the invocation must run with that directory as its cwd or Gradle reports "does not
+            // contain a Gradle build" even though the wrapper was found correctly. An explicit
+            // working directory on the configuration wins.
+            if let projectDirectory, built.config.workingDirectoryOverride == nil {
+                built.config = built.config.workingDirectory(projectDirectory)
+            }
+        }.command()
     }
 
     // MARK: - Private
 
     private func resolveGradlew() -> String {
-        // 1. Explicitly set path
-        if let path = gradlewPath { return path }
+        if let explicitGradlewPath { return explicitGradlewPath }
 
-        // 2. ./gradlew relative to projectDir or cwd
-        let dir = projectDir ?? "."
+        let dir = projectDirectory ?? "."
         let candidate = "\(dir)/gradlew"
-        if FileManager.default.fileExists(atPath: candidate) {
-            // Resolve to an absolute path now, against the process's current cwd: `command()`
-            // may set `projectDir` as the child process's working directory, which would
-            // otherwise make this path (still relative, and still joined with `dir`) resolve
-            // against the wrong base once the process actually starts.
+        if fileExists(candidate) {
+            // Resolve to an absolute path now, against the process's current cwd: the child
+            // process may run with `projectDir` as its working directory, which would otherwise
+            // make this relative path resolve against the wrong base.
             return URL(fileURLWithPath: candidate).path
         }
 
-        // 3. Fall back to `gradle` on PATH
         return "gradle"
-    }
-
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        tasks: [GradleTask]? = nil,
-        properties: [GradleProperty]? = nil,
-        flags: [GradleFlag]? = nil,
-        gradlewPath: String?? = .none,
-        projectDir: String?? = .none,
-        jvmArgs: String?? = .none
-    ) -> Self {
-        Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            tasks: tasks ?? self.tasks,
-            properties: properties ?? self.properties,
-            flags: flags ?? self.flags,
-            gradlewPath: gradlewPath != .none ? gradlewPath! : self.gradlewPath,
-            projectDir: projectDir != .none ? projectDir! : self.projectDir,
-            jvmArgs: jvmArgs != .none ? jvmArgs! : self.jvmArgs
-        )
     }
 }

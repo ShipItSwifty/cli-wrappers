@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for the `flutter` CLI: dependencies, builds for devices and simulators,
 /// install/run, unit and integration tests, and inventory.
@@ -35,12 +35,12 @@ public struct Flutter: RunnableCommandFamily {
 
     // MARK: - Project
 
-    /// `flutter pub get`.
+    /// **Mutating**: `flutter pub get`.
     public func pubGet(offline: Bool = false, enforceLockfile: Bool = false) -> Self {
         operation(["pub", "get"] + flag("--offline", offline) + flag("--enforce-lockfile", enforceLockfile))
     }
 
-    /// `flutter clean`.
+    /// **Mutating**: `flutter clean`.
     public func clean() -> Self {
         operation(["clean"])
     }
@@ -52,7 +52,7 @@ public struct Flutter: RunnableCommandFamily {
 
     // MARK: - Build
 
-    /// `flutter build <target>`.
+    /// **Mutating**: `flutter build <target>`.
     ///
     /// - Parameters:
     ///   - simulator: Build for the iOS Simulator (`--simulator`, `.ios` only).
@@ -83,22 +83,22 @@ public struct Flutter: RunnableCommandFamily {
         return operation(values)
     }
 
-    /// `flutter build ios --release --no-codesign`: a compile check without an IPA.
+    /// **Mutating**: `flutter build ios --release --no-codesign`: a compile check without an IPA.
     public func buildIOS(flavor: String? = nil, dartDefines: [String: String] = [:], target: String? = nil) -> Self {
         build(.ios, codesign: false, flavor: flavor, dartDefines: dartDefines, entryPoint: target)
     }
 
-    /// `flutter build ipa --release`: produces `build/ios/ipa/*.ipa`.
+    /// **Mutating**: `flutter build ipa --release`: produces `build/ios/ipa/*.ipa`.
     public func buildIPA(flavor: String? = nil, dartDefines: [String: String] = [:], target: String? = nil) -> Self {
         build(.ipa, flavor: flavor, dartDefines: dartDefines, entryPoint: target)
     }
 
-    /// `flutter build appbundle --release`: produces `build/app/outputs/bundle/release/app-release.aab`.
+    /// **Mutating**: `flutter build appbundle --release`: produces `build/app/outputs/bundle/release/app-release.aab`.
     public func buildAppBundle(flavor: String? = nil, dartDefines: [String: String] = [:], target: String? = nil) -> Self {
         build(.appbundle, flavor: flavor, dartDefines: dartDefines, entryPoint: target)
     }
 
-    /// `flutter build apk --release`: produces `build/app/outputs/flutter-apk/app-release.apk`.
+    /// **Mutating**: `flutter build apk --release`: produces `build/app/outputs/flutter-apk/app-release.apk`.
     public func buildAPK(flavor: String? = nil, dartDefines: [String: String] = [:], target: String? = nil) -> Self {
         build(.apk, flavor: flavor, dartDefines: dartDefines, entryPoint: target)
     }
@@ -115,12 +115,12 @@ public struct Flutter: RunnableCommandFamily {
         operation(["emulators"])
     }
 
-    /// `flutter install -d <device>`, optionally from a prebuilt binary.
+    /// **Mutating**: `flutter install -d <device>`, optionally from a prebuilt binary.
     public func install(device: String, mode: FlutterBuildMode = .release, applicationBinary: String? = nil) -> Self {
         operation(["install", "-d", device, mode.flag] + optionalFlag("--use-application-binary", applicationBinary))
     }
 
-    /// `flutter run -d <device>`. Named `runApp` because `run()` executes the command; long-lived, so `spawn` it.
+    /// **Mutating**: `flutter run -d <device>`. Named `runApp` because `run()` executes the command; long-lived, so `spawn` it.
     public func runApp(
         device: String,
         mode: FlutterBuildMode = .debug,
@@ -162,7 +162,7 @@ public struct Flutter: RunnableCommandFamily {
         )
     }
 
-    /// `flutter drive --driver <driver> --target <target> -d <device>`.
+    /// **Mutating**: `flutter drive --driver <driver> --target <target> -d <device>`.
     public func drive(driver: String, target: String, device: String, mode: FlutterBuildMode = .debug) -> Self {
         operation(["drive", "--driver", driver, "--target", target, "-d", device, mode.flag])
     }

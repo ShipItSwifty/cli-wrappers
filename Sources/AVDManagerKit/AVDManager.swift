@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for the Android SDK's `avdmanager`, which creates and lists Android Virtual
 /// Devices. Booting an AVD is `EmulatorKit`'s job.
@@ -49,7 +49,7 @@ public struct AVDManager: RunnableCommandFamily {
         operation(["list", "target"] + flag("-c", compact))
     }
 
-    /// `create avd`.
+    /// **Mutating**: `create avd`.
     ///
     /// - Parameters:
     ///   - systemImage: SDK package, e.g. `system-images;android-35;google_apis;arm64-v8a`.
@@ -70,12 +70,12 @@ public struct AVDManager: RunnableCommandFamily {
         )
     }
 
-    /// `delete avd`.
+    /// **Mutating**: `delete avd`.
     public func deleteAVD(name: String) -> Self {
         operation(["delete", "avd", "--name", name])
     }
 
-    /// `move avd`, renaming and/or relocating it.
+    /// **Mutating**: `move avd`, renaming and/or relocating it.
     public func moveAVD(name: String, renameTo newName: String? = nil, path: String? = nil) -> Self {
         operation(["move", "avd", "--name", name] + optionalOption("--rename", newName) + optionalOption("--path", path))
     }

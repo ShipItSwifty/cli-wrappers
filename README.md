@@ -73,6 +73,60 @@ let command = Bazel(context: shell)
 // command.arguments == ["test", "--config=ci", "--build_event_json_file=bep.json", "//app:unit_tests"]
 ```
 
+### The shared command surface
+
+Every wrapper conforms to SwiftyShell's `RunnableCommandFamily`, so they all work the same way:
+
+| Member | What it does |
+| --- | --- |
+| `command()` | Builds the `Command` (executable plus argv). Pure: launches nothing and touches no files. |
+| `run()` / `spawn()` | Executes the command and returns captured output, or starts it as a long-lived process. |
+| `settingStdoutDestination(_:)` / `settingStderrDestination(_:)` | Captures, discards, tees, or redirects a stream to a file. |
+| `updatingConfiguration(_:)` | Applies a timeout, environment variables, working directory, or output limit. |
+| `init(context:executablePath:)` | Selects the executable. Android tools also look under `ANDROID_HOME` / `ANDROID_SDK_ROOT` in the context's environment before falling back to `PATH`. |
+
+Selecting an operation replaces the previous one, and a wrapper adds no retries, defaults, or error
+mapping: those belong to the caller.
+
+An Android example, running one instrumentation test with extras:
+
+```swift
+import AdbKit
+
+let launch = Adb(context: shell)
+    .serial("emulator-5554")
+    .amStartActivity(
+        component: "com.example/.MainActivity",
+        wait: true,
+        typedExtras: [.string("mode", "test"), .bool("debug", true)]
+    )
+    .updatingConfiguration { $0.timeout(30) }
+
+try await launch.run()
+```
+
+### Asserting argv in your tests
+
+`command()` is a pure value, so a consumer can check exactly what would run without a device or the
+tool installed, on any platform:
+
+```swift
+import Testing
+import XcrunKit
+
+@Test func launchesWithEnvironment() {
+    let command = Simctl(executablePath: "xcrun")
+        .launch("booted", bundleIdentifier: "com.example.app", environment: ["MODE": "test"])
+        .command()
+
+    #expect(command.arguments == ["simctl", "launch", "booted", "com.example.app"])
+    #expect(command.environmentOverrides == ["SIMCTL_CHILD_MODE": "test"])
+}
+```
+
+Pass `executablePath:` in tests so the assertion does not depend on which SDK is installed on the
+machine running them.
+
 Build mechanisms, device lifecycle, and test execution built on these wrappers live in
 [`ShipItSwifty/mobile-kits`](https://github.com/ShipItSwifty/mobile-kits).
 

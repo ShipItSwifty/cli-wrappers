@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for `xcrun devicectl`, Apple's CLI for CoreDevice: physical devices and, from
 /// Xcode 27, simulators.

@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // `device pasteboard` and `device notification`.
 extension DeviceCtl {

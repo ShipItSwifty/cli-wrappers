@@ -39,4 +39,32 @@ struct SecurityCLITests {
                 "-T", "/usr/bin/security",
             ])
     }
+
+    @Test(
+        "Every operation emits its full argv",
+        arguments: [
+            (SecurityCLI().help("import"), ["help", "import"]),
+            (SecurityCLI().createKeychain(name: "ci.keychain"), ["create-keychain", "ci.keychain"]),
+            (
+                SecurityCLI().setKeychainSettings(name: "ci.keychain", timeout: 3600),
+                ["set-keychain-settings", "-lut", "3600", "ci.keychain"]
+            ),
+            (SecurityCLI().setUserKeychainSearchList(["a", "b"]), ["list-keychains", "-d", "user", "-s", "a", "b"]),
+            (
+                SecurityCLI().setKeyPartitionList(services: "apple:", password: "pw", keychainName: "ci.keychain"),
+                ["set-key-partition-list", "-S", "apple:", "-s", "-k", "pw", "ci.keychain"]
+            ),
+            (SecurityCLI().unlockKeychain(name: "ci.keychain", password: "pw"), ["unlock-keychain", "-p", "pw", "ci.keychain"]),
+            (SecurityCLI().unlockKeychain(name: "ci.keychain"), ["unlock-keychain", "ci.keychain"]),
+            (SecurityCLI().deleteKeychain(name: "ci.keychain"), ["delete-keychain", "ci.keychain"]),
+        ] as [(SecurityCLI, [String])]
+    )
+    func operations(security: SecurityCLI, expected: [String]) {
+        #expect(security.command().arguments == expected)
+    }
+
+    @Test func promptingFormsNeverCarryAPassword() {
+        #expect(!SecurityCLI().unlockKeychain(name: "k").command().arguments.contains("-p"))
+        #expect(!SecurityCLI().createKeychain(name: "k").command().arguments.contains("-p"))
+    }
 }

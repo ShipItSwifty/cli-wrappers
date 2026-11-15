@@ -22,4 +22,25 @@ struct PodTests {
     func update() {
         #expect(Pod().update(["Alamofire"], repoUpdate: false).command().arguments == ["update", "Alamofire", "--no-repo-update"])
     }
+
+    @Test(
+        "Every operation emits its full argv",
+        arguments: [
+            (Pod().install(cleanInstall: true), ["install", "--clean-install"]),
+            (Pod().update(), ["update"]),
+            (Pod().repoUpdate(), ["repo", "update"]),
+            (Pod().deintegrate(), ["deintegrate"]),
+            (Pod().outdated(), ["outdated"]),
+            (Pod().version(), ["--version"]),
+            (Pod().outdated().verbose().noANSI(), ["outdated", "--verbose", "--no-ansi"]),
+        ] as [(Pod, [String])]
+    )
+    func operations(pod: Pod, expected: [String]) {
+        #expect(pod.command().arguments == expected)
+    }
+
+    @Test("An explicit executable replaces both bundle and pod")
+    func explicitExecutable() {
+        #expect(Pod(executablePath: "/opt/pod").version().command().executableName == "/opt/pod")
+    }
 }
