@@ -69,14 +69,17 @@ extension DeviceCtl {
         scale: Double? = nil,
         destination: String? = nil
     ) -> Self {
-        var options = optionalOption("--app-bundle-id", bundleID)
-        options += optionalOption("--app-path", appPath)
-        options += allowPlaceholder.map { ["--allow-placeholder", $0 ? "true" : "false"] } ?? []
-        options += optionalNumber("--width", width)
-        options += optionalNumber("--height", height)
-        options += optionalNumber("--scale", scale)
-        options += optionalOption("--destination", destination)
-        return deviceOperation(["device", "info", "appIcon"], device: device, options)
+        var arguments: [String] = []
+        arguments += optionalOption("--app-bundle-id", bundleID)
+        arguments += optionalOption("--app-path", appPath)
+        if let allowPlaceholder {
+            arguments += ["--allow-placeholder", allowPlaceholder ? "true" : "false"]
+        }
+        arguments += optionalNumber("--width", width)
+        arguments += optionalNumber("--height", height)
+        arguments += optionalNumber("--scale", scale)
+        arguments += optionalOption("--destination", destination)
+        return deviceOperation(["device", "info", "appIcon"], device: device, arguments)
     }
 
     /// `device info appResize`: the state of the active resizable app session. Fails without one.
