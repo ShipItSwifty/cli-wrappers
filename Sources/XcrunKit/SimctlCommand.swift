@@ -31,6 +31,21 @@ public struct SimctlListTarget: Sendable, Equatable, Hashable {
     public static let pairs = Self("pairs")
 }
 
+/// How `simctl launch` attaches the app's output.
+public enum SimctlLaunchConsole: Sendable, Equatable, Hashable, CaseIterable {
+    /// `--console`: attach stdout and stderr to the command.
+    case attached
+    /// `--console-pty`: attach them through a pseudo-terminal.
+    case pty
+
+    var flag: String {
+        switch self {
+        case .attached: "--console"
+        case .pty: "--console-pty"
+        }
+    }
+}
+
 /// A typed `simctl` subcommand and its arguments.
 public struct SimctlCommand: Sendable, Equatable, Hashable {
     /// The raw arguments that represent the subcommand.
@@ -101,8 +116,12 @@ public struct SimctlCommand: Sendable, Equatable, Hashable {
     }
 
     /// Builds a `bootstatus` command.
-    public static func bootStatus(_ device: String) -> Self {
-        Self(arguments: ["bootstatus", device])
+    ///
+    /// - Parameters:
+    ///   - device: Device UDID, name, or `booted`.
+    ///   - boot: Pass `-b` to boot the device if it is not already booted, then wait for it.
+    public static func bootStatus(_ device: String, boot: Bool = false) -> Self {
+        Self(arguments: ["bootstatus", device] + (boot ? ["-b"] : []))
     }
 
     /// Builds a `shutdown` command.
@@ -145,9 +164,30 @@ public struct SimctlCommand: Sendable, Equatable, Hashable {
         Self(arguments: ["uninstall", device, bundleIdentifier])
     }
 
-    /// Builds a `launch` command.
-    public static func launch(_ device: String, bundleIdentifier: String) -> Self {
-        Self(arguments: ["launch", device, bundleIdentifier])
+    /// Builds a `launch` command: `simctl launch [options] <device> <bundle id> [arguments...]`.
+    ///
+    /// Environment for the launched app is not argv: pass it through
+    /// ``Simctl/launch(_:bundleIdentifier:arguments:environment:terminateRunning:waitForDebugger:console:)``,
+    /// which renders it as `SIMCTL_CHILD_<name>` variables on the command.
+    ///
+    /// - Parameters:
+    ///   - arguments: Arguments passed to the app, after the bundle identifier.
+    ///   - terminateRunning: Pass `--terminate-running-process` to relaunch an already-running app.
+    ///   - waitForDebugger: Pass `--wait-for-debugger` to start the app suspended.
+    ///   - console: Attach the app's stdout and stderr to the command.
+    public static func launch(
+        _ device: String,
+        bundleIdentifier: String,
+        arguments: [String] = [],
+        terminateRunning: Bool = false,
+        waitForDebugger: Bool = false,
+        console: SimctlLaunchConsole? = nil
+    ) -> Self {
+        var values = ["launch"]
+        if terminateRunning { values.append("--terminate-running-process") }
+        if waitForDebugger { values.append("--wait-for-debugger") }
+        if let console { values.append(console.flag) }
+        return Self(arguments: values + [device, bundleIdentifier] + arguments)
     }
 
     /// Builds a `terminate` command.

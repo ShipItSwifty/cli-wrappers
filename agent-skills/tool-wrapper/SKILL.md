@@ -6,7 +6,8 @@ description: Add a new command-line tool wrapper to cli-wrappers, or extend an e
 # Add or extend a tool wrapper
 
 Each wrapped tool is its own library product (`<Tool>Kit`) that depends only on SwiftyShell and
-the internal `WrapperSupport` target. Wrappers build argv; they hold no policy (retries, defaults
+the internal `WrapperSupport` target (declared `package`, imported with `internal import`, so none
+of its symbols leak into a consumer). Wrappers build argv; they hold no policy (retries, defaults
 chosen for a workflow, error mapping). That belongs to `mobile-kits` or the consuming app.
 
 ## New tool
@@ -18,7 +19,7 @@ chosen for a workflow, error mapping). That belongs to `mobile-kits` or the cons
 ```swift
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for `tool`. ...
 public struct Tool: RunnableCommandFamily {
@@ -57,8 +58,15 @@ public struct Tool: RunnableCommandFamily {
 - `run()` executes the command, so name a tool's own `run` subcommand differently
   (`runTarget`, `runApp`, `runIOS`).
 - Secrets: prefer file/env sources (`BundletoolPassword.file`) over argv, which other users can see.
-- Executables: honour an explicit `executablePath`, then SDK environment variables via
-  `AndroidSDK.executable(_:fallback:environment:)`, then `PATH`.
+- Executables: every wrapper takes an `executablePath`. Honour it first, then SDK environment
+  variables via `AndroidSDK.executable(_:fallback:environment:)` (read from `context.environment`,
+  never `ProcessInfo`), then `PATH`.
+- `command()` is pure. Resolve the executable at `init`, or take an injected `fileExists:` /
+  `environment:` closure for lookups that depend on later builder calls (as `Gradle` does).
+- Keep long `+` chains of `[String]` short: build `var arguments: [String]` and append in steps, or
+  Swift 6.2 fails with "unable to type-check this expression in reasonable time" on Linux.
+- Secrets in argv are visible in `ps`. Say so in the DocC of any method that takes one, and add a
+  prompting or file-based form when the tool offers it.
 - No `#if os(macOS)` around argv construction: Linux builds and tests every wrapper. Gate only a
   test that runs the real tool.
 - Mark device- or machine-mutating operations **Mutating** in their DocC.
@@ -69,5 +77,7 @@ public struct Tool: RunnableCommandFamily {
 ## Tests
 
 In `Tests/<Tool>KitTests/`, assert the **entire** argv (`command().arguments == [...]`), and test
-ordering-sensitive cases explicitly. Pure helpers take injected inputs (`environment:`,
+ordering-sensitive cases explicitly. Construct the wrapper with an explicit `executablePath:` so the
+test does not depend on `ANDROID_HOME` or the installed tools, and use Swift Testing `arguments:` to
+cover many operations in one test. Pure helpers take injected inputs (`environment:`,
 `fileExists:`), so tests never touch the machine.

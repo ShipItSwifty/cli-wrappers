@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyShell
+internal import WrapperSupport
 
 /// A fluent wrapper for the `xcodebuild` command.
 ///
@@ -8,81 +9,50 @@ import SwiftyShell
 /// ``option(_:)`` and ``trailingArgument(_:)`` methods remain available for
 /// options and operations not modeled by this package.
 public struct XcodeBuild: RunnableCommandFamily {
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-    /// Typed `xcodebuild` options applied before build settings and trailing arguments.
-    public let options: [XcodeBuildOption]
-    /// Additional trailing arguments passed to `xcodebuild`.
-    public let trailingArguments: [String]
-    let buildSettings: [XcodeBuildBuildSetting]
-    let operation: XcodeBuildOperation?
+    private var spec: CommandSpec
+    private var options: [XcodeBuildOption] = []
+    private var trailing: [String] = []
+    private var settings: [XcodeBuildBuildSetting] = []
+    private var operation: XcodeBuildOperation?
 
     /// The shell context used when running this command family.
-    public var context: ShellContext { config.context }
+    public var context: ShellContext { spec.config.context }
 
     /// Creates an `xcodebuild` command family bound to a shell context.
-    public init(context: ShellContext = .init()) {
-        self.config = ToolConfiguration(context: context)
-        self.stdoutDestination = .capture
-        self.stderrDestination = .capture
-        self.options = []
-        self.trailingArguments = []
-        self.buildSettings = []
-        self.operation = nil
-    }
-
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        options: [XcodeBuildOption],
-        trailingArguments: [String],
-        buildSettings: [XcodeBuildBuildSetting],
-        operation: XcodeBuildOperation?
-    ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.options = options
-        self.trailingArguments = trailingArguments
-        self.buildSettings = buildSettings
-        self.operation = operation
+    ///
+    /// - Parameter executablePath: The executable to run, resolved through `PATH` when it has no slash.
+    public init(context: ShellContext = .init(), executablePath: String = "xcodebuild") {
+        self.spec = CommandSpec(executable: executablePath, context: context)
     }
 
     /// Returns a new value with updated shared tool configuration.
-    public func updatingConfiguration(
-        _ update: (ToolConfiguration) -> ToolConfiguration
-    ) -> Self {
-        copy(config: update(config))
+    public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
+        modified(self) { $0.spec.config = update($0.spec.config) }
     }
 
     /// Redirects stdout for the built `xcodebuild` command.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination)
+        modified(self) { $0.spec.stdout = destination }
     }
 
     /// Redirects stderr for the built `xcodebuild` command.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination)
+        modified(self) { $0.spec.stderr = destination }
     }
 
     /// Appends a typed `xcodebuild` option.
     public func option(_ option: XcodeBuildOption) -> Self {
-        copy(options: options + [option])
+        modified(self) { $0.options.append(option) }
     }
 
     /// Appends multiple typed `xcodebuild` options.
     public func options(_ values: [XcodeBuildOption]) -> Self {
-        copy(options: options + values)
+        modified(self) { $0.options += values }
     }
 
     /// Selects an Xcode project or workspace, replacing any previously selected typed container.
     public func container(_ container: XcodeBuildContainer) -> Self {
-        copy(options: options.filter { !$0.isContainerOption } + [container.option])
+        modified(self) { $0.options = $0.options.filter { !$0.isContainerOption } + [container.option] }
     }
 
     /// Selects an Xcode project, replacing any previously selected typed project or workspace.
@@ -97,32 +67,32 @@ public struct XcodeBuild: RunnableCommandFamily {
 
     /// Appends a trailing argument.
     public func trailingArgument(_ value: String) -> Self {
-        copy(trailingArguments: trailingArguments + [value])
+        modified(self) { $0.trailing.append(value) }
     }
 
     /// Appends multiple trailing arguments.
     public func trailingArguments(_ values: [String]) -> Self {
-        copy(trailingArguments: trailingArguments + values)
+        modified(self) { $0.trailing += values }
     }
 
     /// Adds a build setting in `NAME=VALUE` form.
     public func buildSetting(_ name: String, _ value: String) -> Self {
-        copy(buildSettings: buildSettings + [XcodeBuildBuildSetting(name: name, value: value)])
+        modified(self) { $0.settings.append(XcodeBuildBuildSetting(name: name, value: value)) }
     }
 
     /// Adds multiple build settings.
     public func buildSettings(_ values: KeyValuePairs<String, String>) -> Self {
-        copy(buildSettings: buildSettings + values.map { XcodeBuildBuildSetting(name: $0.0, value: $0.1) })
+        modified(self) { $0.settings += values.map { XcodeBuildBuildSetting(name: $0.0, value: $0.1) } }
     }
 
     /// Configures the command to build, optionally cleaning before the build.
     public func build(clean: Bool = false) -> Self {
-        copy(operation: .build(clean: clean), replaceOperation: true)
+        select(.build(clean: clean))
     }
 
     /// Configures the command to run the test action.
     public func test() -> Self {
-        copy(operation: .test, replaceOperation: true)
+        select(.test)
     }
 
     /// Configures the command to run the `build-for-testing` action.
@@ -143,7 +113,7 @@ public struct XcodeBuild: RunnableCommandFamily {
     ///     .run()
     /// ```
     public func buildForTesting() -> Self {
-        copy(operation: .buildForTesting, replaceOperation: true)
+        select(.buildForTesting)
     }
 
     /// Configures the command to run the `test-without-building` action.
@@ -160,13 +130,13 @@ public struct XcodeBuild: RunnableCommandFamily {
     ///     .run()
     /// ```
     public func testWithoutBuilding() -> Self {
-        copy(operation: .testWithoutBuilding, replaceOperation: true)
+        select(.testWithoutBuilding)
     }
 
     /// Configures the command to archive build products.
     /// - Parameter path: Optional destination path for the created `.xcarchive`.
     public func archive(path: String? = nil) -> Self {
-        copy(operation: .archive(path: path), replaceOperation: true)
+        select(.archive(path: path))
     }
 
     /// Configures the command to export an existing archive.
@@ -179,28 +149,28 @@ public struct XcodeBuild: RunnableCommandFamily {
         exportPath: String? = nil,
         exportOptionsPlist: String
     ) -> Self {
-        copy(
-            operation: .exportArchive(
+        select(
+            .exportArchive(
                 archivePath: archivePath,
                 exportPath: exportPath,
                 exportOptionsPlist: exportOptionsPlist
-            ),
-            replaceOperation: true
+            )
         )
     }
 
     /// Configures the command to display build settings.
     /// - Parameter json: Whether to request JSON output. `xcodebuild` also enables quiet output for JSON.
     public func showBuildSettings(json: Bool = false) -> Self {
-        copy(operation: .showBuildSettings(json: json), replaceOperation: true)
+        select(.showBuildSettings(json: json))
     }
 
     /// Configures the command to display destinations valid for the selected scheme.
     public func showDestinations() -> Self {
-        copy(operation: .showDestinations, replaceOperation: true)
+        select(.showDestinations)
     }
 
     /// Configures the command to create an XCFramework from prebuilt inputs.
+    /// An empty `inputs` list produces an argv `xcodebuild` itself rejects; this wrapper does not trap.
     /// - Parameters:
     ///   - inputs: Frameworks and libraries to package. Library headers and debug symbols remain grouped with their input.
     ///   - output: Destination path for the `.xcframework`.
@@ -210,51 +180,62 @@ public struct XcodeBuild: RunnableCommandFamily {
         output: String,
         allowInternalDistribution: Bool = false
     ) -> Self {
-        precondition(!inputs.isEmpty, "Creating an XCFramework requires at least one input.")
-        return copy(
-            operation: .createXCFramework(
+        select(
+            .createXCFramework(
                 inputs: inputs,
                 output: output,
                 allowInternalDistribution: allowInternalDistribution
-            ),
-            replaceOperation: true
+            )
         )
+    }
+
+    /// Configures the command to clean without building (`xcodebuild clean`).
+    public func clean() -> Self {
+        select(.clean)
+    }
+
+    /// Configures the command to run the static analyzer (`xcodebuild analyze`).
+    public func analyze() -> Self {
+        select(.analyze)
+    }
+
+    /// Configures the command to build DocC documentation (`xcodebuild docbuild`).
+    public func docbuild() -> Self {
+        select(.docbuild)
+    }
+
+    /// **Mutating**: resolves Swift package dependencies (`xcodebuild -resolvePackageDependencies`).
+    ///
+    /// Writes resolved state and fetches sources into the package cache or derived data.
+    public func resolvePackageDependencies() -> Self {
+        select(.resolvePackageDependencies)
+    }
+
+    /// Lists a container's targets, build configurations, and schemes (`xcodebuild -list [-json]`).
+    ///
+    /// Select the container with ``project(_:)`` or ``workspace(_:)`` first.
+    public func list(json: Bool = false) -> Self {
+        select(.list(json: json))
+    }
+
+    /// Reports the Xcode version and build (`xcodebuild -version`).
+    public func version() -> Self {
+        select(.version)
     }
 
     /// Builds the raw `xcodebuild` command.
     public func command() -> Command {
-        let base = Command("xcodebuild")
-            .args(operation?.prefixArguments ?? [])
-            .args(options.flatMap(\.arguments))
-            .args(operation?.argumentsAfterOptions ?? [])
-            .args(buildSettings.map(\.argument))
-            .args(operation?.buildActions ?? [])
-            .args(trailingArguments)
-            .stdout(stdoutDestination)
-            .stderr(stderrDestination)
-
-        return config.apply(to: base)
+        var arguments: [String] = operation?.prefixArguments ?? []
+        arguments += options.flatMap(\.arguments)
+        arguments += operation?.argumentsAfterOptions ?? []
+        arguments += settings.map(\.argument)
+        arguments += operation?.buildActions ?? []
+        arguments += trailing
+        return modified(spec) { $0.arguments = arguments }.command()
     }
 
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        options: [XcodeBuildOption]? = nil,
-        trailingArguments: [String]? = nil,
-        buildSettings: [XcodeBuildBuildSetting]? = nil,
-        operation: XcodeBuildOperation? = nil,
-        replaceOperation: Bool = false
-    ) -> Self {
-        Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            options: options ?? self.options,
-            trailingArguments: trailingArguments ?? self.trailingArguments,
-            buildSettings: buildSettings ?? self.buildSettings,
-            operation: replaceOperation ? operation : self.operation
-        )
+    private func select(_ value: XcodeBuildOperation) -> Self {
+        modified(self) { $0.operation = value }
     }
 }
 

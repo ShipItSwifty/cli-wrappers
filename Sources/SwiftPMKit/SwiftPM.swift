@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// Typed `swift` package workflows: build, test with machine-readable output, coverage, format
 /// lint, and manifest inspection.

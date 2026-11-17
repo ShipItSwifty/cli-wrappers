@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // `device settings`, `device orientation`, `device appResize`, and device-level actions.
 extension DeviceCtl {

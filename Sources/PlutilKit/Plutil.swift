@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyShell
+internal import WrapperSupport
 
 /// A format accepted by `plutil -convert`.
 public enum PlutilConversionFormat: String, Sendable {
@@ -119,51 +120,32 @@ public enum PlutilConversionOutput: Sendable {
 ///
 /// Build one operation and execute it through SwiftyShell with ``run()``.
 public struct Plutil: RunnableCommandFamily {
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-
-    private let operation: Operation?
+    private var spec: CommandSpec
+    private var operation: Operation?
 
     /// The shell context used when running this command family.
-    public var context: ShellContext { config.context }
+    public var context: ShellContext { spec.config.context }
 
     /// Creates a `plutil` command family bound to a shell context.
-    public init(context: ShellContext = .init()) {
-        self.config = ToolConfiguration(context: context)
-        self.stdoutDestination = .capture
-        self.stderrDestination = .capture
-        self.operation = nil
-    }
-
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        operation: Operation?
-    ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.operation = operation
+    ///
+    /// - Parameter executablePath: The executable to run, resolved through `PATH` when it has no slash.
+    public init(context: ShellContext = .init(), executablePath: String = "plutil") {
+        self.spec = CommandSpec(executable: executablePath, context: context)
     }
 
     /// Returns a new value with updated shared tool configuration.
     public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
-        copy(config: update(config))
+        modified(self) { $0.spec.config = update($0.spec.config) }
     }
 
     /// Redirects stdout for the built `plutil` command.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination)
+        modified(self) { $0.spec.stdout = destination }
     }
 
     /// Redirects stderr for the built `plutil` command.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination)
+        modified(self) { $0.spec.stderr = destination }
     }
 
     /// Checks one or more property list files for syntax errors.
@@ -171,17 +153,17 @@ public struct Plutil: RunnableCommandFamily {
     ///   - plistPath: The first property list to check.
     ///   - additionalPlistPaths: Any additional property lists to check in the same invocation.
     public func lint(_ plistPath: String, additionalPlistPaths: [String] = []) -> Self {
-        copy(operation: .lint([plistPath] + additionalPlistPaths))
+        select(.lint([plistPath] + additionalPlistPaths))
     }
 
-    /// Converts a property list to another representation.
+    /// **Mutating**: Converts a property list to another representation.
     public func convert(
         _ plistPath: String,
         to format: PlutilConversionFormat,
         output: PlutilConversionOutput = .replaceInput,
         prettyPrinted: Bool = false
     ) -> Self {
-        copy(operation: .convert(path: plistPath, format: format, output: output, prettyPrinted: prettyPrinted))
+        select(.convert(path: plistPath, format: format, output: output, prettyPrinted: prettyPrinted))
     }
 
     /// Extracts a value as a standalone property list, optionally asserting its type.
@@ -191,7 +173,7 @@ public struct Plutil: RunnableCommandFamily {
         expectedType: PlutilValueType? = nil,
         from plistPath: String
     ) -> Self {
-        copy(operation: .extract(keyPath: keyPath, format: format.rawValue, expectedType: expectedType, path: plistPath))
+        select(.extract(keyPath: keyPath, format: format.rawValue, expectedType: expectedType, path: plistPath))
     }
 
     /// Extracts the unencapsulated representation of a property list value.
@@ -201,8 +183,8 @@ public struct Plutil: RunnableCommandFamily {
         from plistPath: String,
         omitTrailingNewline: Bool = false
     ) -> Self {
-        copy(
-            operation: .extractRaw(
+        select(
+            .extractRaw(
                 keyPath: keyPath,
                 expectedType: expectedType,
                 path: plistPath,
@@ -210,53 +192,38 @@ public struct Plutil: RunnableCommandFamily {
             ))
     }
 
-    /// Inserts a typed value at a key path that does not already exist.
+    /// **Mutating**: Inserts a typed value at a key path that does not already exist.
     public func insert(_ value: PlutilValue, at keyPath: String, in plistPath: String) -> Self {
-        copy(operation: .insert(keyPath: keyPath, value: value, path: plistPath, append: false))
+        select(.insert(keyPath: keyPath, value: value, path: plistPath, append: false))
     }
 
-    /// Appends a typed value to the array at a key path.
+    /// **Mutating**: Appends a typed value to the array at a key path.
     public func append(_ value: PlutilValue, toArrayAt keyPath: String, in plistPath: String) -> Self {
-        copy(operation: .insert(keyPath: keyPath, value: value, path: plistPath, append: true))
+        select(.insert(keyPath: keyPath, value: value, path: plistPath, append: true))
     }
 
-    /// Inserts an empty array or dictionary at a key path that does not already exist.
+    /// **Mutating**: Inserts an empty array or dictionary at a key path that does not already exist.
     public func insertEmpty(_ collection: PlutilEmptyCollection, at keyPath: String, in plistPath: String) -> Self {
-        copy(operation: .insertEmpty(keyPath: keyPath, collection: collection, path: plistPath))
+        select(.insertEmpty(keyPath: keyPath, collection: collection, path: plistPath))
     }
 
-    /// Replaces an existing value at a key path.
+    /// **Mutating**: Replaces an existing value at a key path.
     public func replace(_ value: PlutilValue, at keyPath: String, in plistPath: String) -> Self {
-        copy(operation: .replace(keyPath: keyPath, value: value, path: plistPath))
+        select(.replace(keyPath: keyPath, value: value, path: plistPath))
     }
 
-    /// Removes the value at a key path.
+    /// **Mutating**: Removes the value at a key path.
     public func remove(_ keyPath: String, from plistPath: String) -> Self {
-        copy(operation: .remove(keyPath: keyPath, path: plistPath))
+        select(.remove(keyPath: keyPath, path: plistPath))
     }
 
     /// Builds the selected `plutil` command.
     public func command() -> Command {
-        let base = Command("plutil")
-            .args(operation?.arguments ?? [])
-            .stdout(stdoutDestination)
-            .stderr(stderrDestination)
-
-        return config.apply(to: base)
+        modified(spec) { $0.arguments = operation?.arguments ?? [] }.command()
     }
 
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        operation: Operation? = nil
-    ) -> Self {
-        Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            operation: operation ?? self.operation
-        )
+    private func select(_ value: Operation) -> Self {
+        modified(self) { $0.operation = value }
     }
 }
 

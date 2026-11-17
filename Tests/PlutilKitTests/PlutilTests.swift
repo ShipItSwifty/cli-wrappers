@@ -71,4 +71,13 @@ struct PlutilTests {
                 "-json", "[1,2]",
             ])
     }
+
+    @Test func honoursExecutablePath() {
+        #expect(Plutil(executablePath: "/usr/bin/plutil").lint("a.plist").command().executableName == "/usr/bin/plutil")
+    }
+
+    @Test func selectingAnOperationReplacesThePreviousOne() {
+        let plutil = Plutil().lint("a.plist").remove("Key", from: "b.plist")
+        #expect(plutil.command().arguments == ["-remove", "Key", "--", "b.plist"])
+    }
 }

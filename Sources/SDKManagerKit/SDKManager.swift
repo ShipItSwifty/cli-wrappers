@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for the Android SDK's `sdkmanager`, which installs and updates SDK packages
 /// (platforms, build tools, system images, the emulator).
@@ -61,22 +61,22 @@ public struct SDKManager: RunnableCommandFamily {
         operation([installedOnly ? "--list_installed" : "--list"])
     }
 
-    /// Installs packages such as `platform-tools` or `system-images;android-35;google_apis;arm64-v8a`.
+    /// **Mutating**: Installs packages such as `platform-tools` or `system-images;android-35;google_apis;arm64-v8a`.
     public func install(_ packages: [String]) -> Self {
         operation(packages)
     }
 
-    /// `--uninstall <packages>`.
+    /// **Mutating**: `--uninstall <packages>`.
     public func uninstall(_ packages: [String]) -> Self {
         operation(["--uninstall"] + packages)
     }
 
-    /// `--update`: updates every installed package.
+    /// **Mutating**: `--update`: updates every installed package.
     public func updateAll() -> Self {
         operation(["--update"])
     }
 
-    /// `--licenses`: prompts for every unaccepted license. Feed `y` lines on stdin to accept them.
+    /// **Mutating**: `--licenses`: prompts for every unaccepted license. Feed `y` lines on stdin to accept them.
     public func licenses() -> Self {
         operation(["--licenses"])
     }

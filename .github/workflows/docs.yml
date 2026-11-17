@@ -18,19 +18,34 @@ concurrency:
 jobs:
   build:
     name: Build DocC
-    runs-on: macos-26
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    env:
+      # Makes Package.swift declare swift-docc-plugin, which consumers never resolve.
+      CLI_WRAPPERS_DOCS: "1"
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.4.app
+      - name: Install jq
+        run: apt-get update && apt-get install -y --no-install-recommends jq
+      - name: Cache SwiftPM
+        uses: actions/cache@v6.1.0
+        with:
+          path: .build
+          key: docs-spm-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: docs-spm-
       - name: Build DocC site
         run: |
+          # Every library product is a documented module; deriving the list keeps it in step
+          # with Package.swift instead of a hand-maintained copy.
+          targets=$(swift package dump-package \
+            | jq -r '.products[] | select(.type | has("library")) | .targets[]' \
+            | sed 's/^/--target /' | tr '\n' ' ')
           swift package --allow-writing-to-directory ./docs-output \
             generate-documentation \
             --enable-experimental-combined-documentation \
-            --target XcodeBuildKit --target XcrunKit --target DeviceCtlKit --target XcodeGenKit --target TuistCLIKit --target CocoaPodsKit --target PlutilKit --target SecurityKit --target CodesignKit --target IProxyKit --target FrameitKit --target GradleKit --target AdbKit --target EmulatorKit --target AVDManagerKit --target SDKManagerKit --target BundletoolKit --target AndroidCLIKit --target FlutterKit --target ReactNativeKit --target SwiftPMKit --target BazelKit \
+            $targets \
             --disable-indexing \
             --transform-for-static-hosting \
             --hosting-base-path cli-wrappers \

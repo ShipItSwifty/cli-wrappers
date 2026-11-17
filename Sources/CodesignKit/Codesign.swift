@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for macOS `codesign`: sign, verify, and inspect app bundles and binaries.
 ///
@@ -29,7 +29,7 @@ public struct Codesign: RunnableCommandFamily {
         modified(self) { $0.spec.stderr = destination }
     }
 
-    /// `codesign --force --sign <identity>`.
+    /// **Mutating**: `codesign --force --sign <identity>`.
     ///
     /// - Parameters:
     ///   - identity: Certificate name or SHA-1 hash; `-` signs ad hoc.
@@ -76,7 +76,7 @@ public struct Codesign: RunnableCommandFamily {
         operation(["--display", "--entitlements", "-", "--xml", path])
     }
 
-    /// `codesign --remove-signature`.
+    /// **Mutating**: `codesign --remove-signature`.
     public func removeSignature(_ path: String) -> Self {
         operation(["--remove-signature", path])
     }

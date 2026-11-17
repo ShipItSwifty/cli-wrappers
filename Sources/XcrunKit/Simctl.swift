@@ -9,8 +9,10 @@ public struct Simctl: RunnableCommandFamily {
     public var context: ShellContext { state.xcrun.context }
 
     /// Creates a `simctl` command family bound to a shell context.
-    public init(context: ShellContext = .init()) {
-        self.state = State(xcrun: Xcrun(context: context))
+    ///
+    /// - Parameter executablePath: The `xcrun` executable, resolved through `PATH` when it has no slash.
+    public init(context: ShellContext = .init(), executablePath: String = "xcrun") {
+        self.state = State(xcrun: Xcrun(context: context, executablePath: executablePath))
     }
 
     internal init(
@@ -80,72 +82,101 @@ public struct Simctl: RunnableCommandFamily {
         command(.help(subject))
     }
 
-    /// Uses the `simctl boot` subcommand.
+    /// **Mutating**: Uses the `simctl boot` subcommand.
     public func boot(_ device: String) -> Self {
         command(.boot(device))
     }
 
     /// Uses the `simctl bootstatus` subcommand.
-    public func bootStatus(_ device: String) -> Self {
-        command(.bootStatus(device))
+    ///
+    /// - Parameter boot: Pass `-b` to boot the device first if needed.
+    public func bootStatus(_ device: String, boot: Bool = false) -> Self {
+        command(.bootStatus(device, boot: boot))
     }
 
-    /// Uses the `simctl shutdown` subcommand.
+    /// **Mutating**: Uses the `simctl shutdown` subcommand.
     public func shutdown(_ devices: [String]) -> Self {
         command(.shutdown(devices))
     }
 
-    /// Uses the `simctl erase` subcommand.
+    /// **Mutating**: Uses the `simctl erase` subcommand.
     public func erase(_ devices: [String]) -> Self {
         command(.erase(devices))
     }
 
-    /// Uses the `simctl create` subcommand.
+    /// **Mutating**: Uses the `simctl create` subcommand.
     public func create(name: String, deviceType: String, runtime: String) -> Self {
         command(.create(name: name, deviceType: deviceType, runtime: runtime))
     }
 
-    /// Uses the `simctl clone` subcommand.
+    /// **Mutating**: Uses the `simctl clone` subcommand.
     public func clone(_ device: String, to name: String) -> Self {
         command(.clone(device, to: name))
     }
 
-    /// Uses the `simctl delete` subcommand.
+    /// **Mutating**: Uses the `simctl delete` subcommand.
     public func delete(_ devices: [String]) -> Self {
         command(.delete(devices))
     }
 
-    /// Uses the `simctl rename` subcommand.
+    /// **Mutating**: Uses the `simctl rename` subcommand.
     public func rename(_ device: String, to name: String) -> Self {
         command(.rename(device, to: name))
     }
 
-    /// Uses the `simctl pair` subcommand.
+    /// **Mutating**: Uses the `simctl pair` subcommand.
     public func pair(_ watch: String, with phone: String) -> Self {
         command(.pair(watch, with: phone))
     }
 
-    /// Uses the `simctl unpair` subcommand.
+    /// **Mutating**: Uses the `simctl unpair` subcommand.
     public func unpair(_ device: String) -> Self {
         command(.unpair(device))
     }
 
-    /// Uses the `simctl install` subcommand.
+    /// **Mutating**: Uses the `simctl install` subcommand.
     public func install(_ device: String, appAt path: String) -> Self {
         command(.install(device, appAt: path))
     }
 
-    /// Uses the `simctl uninstall` subcommand.
+    /// **Mutating**: Uses the `simctl uninstall` subcommand.
     public func uninstall(_ device: String, bundleIdentifier: String) -> Self {
         command(.uninstall(device, bundleIdentifier: bundleIdentifier))
     }
 
-    /// Uses the `simctl launch` subcommand.
-    public func launch(_ device: String, bundleIdentifier: String) -> Self {
-        command(.launch(device, bundleIdentifier: bundleIdentifier))
+    /// **Mutating**: Uses the `simctl launch` subcommand.
+    ///
+    /// - Parameters:
+    ///   - arguments: Arguments passed to the app after the bundle identifier.
+    ///   - environment: Variables for the launched app. `simctl` only forwards variables carrying
+    ///     the `SIMCTL_CHILD_` prefix, so each `name` is rendered as `SIMCTL_CHILD_<name>` on the command.
+    ///   - terminateRunning: Relaunch an already-running app (`--terminate-running-process`).
+    ///   - waitForDebugger: Start the app suspended (`--wait-for-debugger`).
+    ///   - console: Attach the app's output to the command.
+    public func launch(
+        _ device: String,
+        bundleIdentifier: String,
+        arguments: [String] = [],
+        environment: [String: String] = [:],
+        terminateRunning: Bool = false,
+        waitForDebugger: Bool = false,
+        console: SimctlLaunchConsole? = nil
+    ) -> Self {
+        let launched = command(
+            .launch(
+                device,
+                bundleIdentifier: bundleIdentifier,
+                arguments: arguments,
+                terminateRunning: terminateRunning,
+                waitForDebugger: waitForDebugger,
+                console: console
+            ))
+        guard !environment.isEmpty else { return launched }
+        let prefixed = Dictionary(uniqueKeysWithValues: environment.map { ("SIMCTL_CHILD_\($0.key)", $0.value) })
+        return launched.updatingConfiguration { $0.env(prefixed) }
     }
 
-    /// Uses the `simctl terminate` subcommand.
+    /// **Mutating**: Uses the `simctl terminate` subcommand.
     public func terminate(_ device: String, bundleIdentifier: String) -> Self {
         command(.terminate(device, bundleIdentifier: bundleIdentifier))
     }
@@ -155,7 +186,7 @@ public struct Simctl: RunnableCommandFamily {
         command(.spawn(device, executable: executable, arguments: arguments))
     }
 
-    /// Uses the `simctl openurl` subcommand.
+    /// **Mutating**: Uses the `simctl openurl` subcommand.
     public func openURL(_ device: String, _ value: String) -> Self {
         command(.openURL(device, value))
     }
@@ -184,12 +215,12 @@ public struct Simctl: RunnableCommandFamily {
         command(.appInfo(device, bundleIdentifier: bundleIdentifier))
     }
 
-    /// Uses the `simctl addmedia` subcommand.
+    /// **Mutating**: Uses the `simctl addmedia` subcommand.
     public func addMedia(_ device: String, files: [String]) -> Self {
         command(.addMedia(device, files: files))
     }
 
-    /// Uses the `simctl pbcopy` subcommand.
+    /// **Mutating**: Uses the `simctl pbcopy` subcommand.
     public func pbcopy(_ device: String) -> Self {
         command(.pbcopy(device))
     }
@@ -204,7 +235,7 @@ public struct Simctl: RunnableCommandFamily {
         command(.io(device, command: name, arguments: arguments))
     }
 
-    /// Uses the `simctl privacy` subcommand.
+    /// **Mutating**: Uses the `simctl privacy` subcommand.
     public func privacy(
         _ device: String,
         action: String,
@@ -214,7 +245,7 @@ public struct Simctl: RunnableCommandFamily {
         command(.privacy(device, action: action, service: service, bundleIdentifier: bundleIdentifier))
     }
 
-    /// Uses the `simctl status_bar` subcommand.
+    /// **Mutating**: Uses the `simctl status_bar` subcommand.
     public func statusBar(_ device: String, arguments: [String]) -> Self {
         command(.statusBar(device, arguments: arguments))
     }
@@ -224,27 +255,27 @@ public struct Simctl: RunnableCommandFamily {
         command(.ui(device, arguments: arguments))
     }
 
-    /// Uses the `simctl push` subcommand.
+    /// **Mutating**: Uses the `simctl push` subcommand.
     public func push(_ device: String, bundleIdentifier: String, payloadAt path: String) -> Self {
         command(.push(device, bundleIdentifier: bundleIdentifier, payloadAt: path))
     }
 
-    /// Uses the `simctl notify_post` subcommand.
+    /// **Mutating**: Uses the `simctl notify_post` subcommand.
     public func notifyPost(_ device: String, notification: String) -> Self {
         command(.notifyPost(device, notification: notification))
     }
 
-    /// Uses the `simctl location` subcommand.
+    /// **Mutating**: Uses the `simctl location` subcommand.
     public func location(_ device: String, action: String, arguments: [String] = []) -> Self {
         command(.location(device, action: action, arguments: arguments))
     }
 
-    /// Uses the `simctl keychain` subcommand.
+    /// **Mutating**: Uses the `simctl keychain` subcommand.
     public func keychain(_ device: String, arguments: [String]) -> Self {
         command(.keychain(device, arguments: arguments))
     }
 
-    /// Uses the `simctl icloud_sync` subcommand.
+    /// **Mutating**: Uses the `simctl icloud_sync` subcommand.
     public func icloudSync(_ device: String) -> Self {
         command(.icloudSync(device))
     }
@@ -254,7 +285,7 @@ public struct Simctl: RunnableCommandFamily {
         command(.runtime(arguments))
     }
 
-    /// Uses the `simctl upgrade` subcommand.
+    /// **Mutating**: Uses the `simctl upgrade` subcommand.
     public func upgrade(_ devices: [String]) -> Self {
         command(.upgrade(devices))
     }

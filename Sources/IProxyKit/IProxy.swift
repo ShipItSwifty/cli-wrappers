@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A typed wrapper for libusbmuxd's `iproxy`, which forwards a host TCP port to a port on a USB- or
 /// network-attached iOS device. `devicectl` has no port forwarding, so this is how a host reaches

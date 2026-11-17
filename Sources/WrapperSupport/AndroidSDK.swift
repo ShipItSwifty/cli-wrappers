@@ -1,12 +1,12 @@
 import Foundation
 
 /// Locates binaries inside an Android SDK, which does not put most of its tools on `PATH`.
-public enum AndroidSDK {
+package enum AndroidSDK {
     /// Environment keys that name the SDK root, in precedence order.
-    public static let rootKeys = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
+    package static let rootKeys = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
 
     /// SDK roots named by the environment, in precedence order.
-    public static func roots(environment: [String: String]) -> [String] {
+    package static func roots(environment: [String: String]) -> [String] {
         rootKeys.compactMap { environment[$0] }.filter { !$0.isEmpty }
     }
 
@@ -17,7 +17,7 @@ public enum AndroidSDK {
     ///   - relativePaths: Candidate locations under the SDK root, in preference order, e.g.
     ///     `["cmdline-tools/latest/bin/avdmanager", "tools/bin/avdmanager"]`.
     ///   - fallback: Executable used when no candidate exists.
-    public static func executable(
+    package static func executable(
         _ relativePaths: [String],
         fallback: String,
         environment: [String: String],

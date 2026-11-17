@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // `device info`: read-only queries about one device.
 extension DeviceCtl {

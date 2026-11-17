@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // App installation and `device process`: launching, signalling, and watching processes.
 extension DeviceCtl {

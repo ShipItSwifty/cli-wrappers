@@ -1,5 +1,6 @@
 import Foundation
 import SwiftyShell
+internal import WrapperSupport
 
 /// A fluent wrapper for `bundletool` — the tool for manipulating Android App Bundles.
 ///
@@ -21,90 +22,60 @@ import SwiftyShell
 /// - Note: Set `BUNDLETOOL_JAR` or pass `jarPath` to specify the JAR location.
 ///   The default fallback is `bundletool` on PATH (if installed as a native binary on macOS via Homebrew).
 public struct Bundletool: RunnableCommandFamily {
-
-    /// Shared configuration applied to commands produced by this client.
-    public let config: ToolConfiguration
-
-    /// The stdout handling strategy for built commands.
-    public let stdoutDestination: OutputDestination
-
-    /// The stderr handling strategy for built commands.
-    public let stderrDestination: OutputDestination
-
-    /// All positional and named arguments for the bundletool subcommand.
-    public let arguments: [String]
-
-    /// Path to the `bundletool.jar` file. When nil, falls back to `bundletool` on PATH.
-    public let jarPath: String?
+    private var spec: CommandSpec
 
     /// The shell context used when running this command family.
-    public var context: ShellContext { config.context }
+    public var context: ShellContext { spec.config.context }
 
     // MARK: - Init
 
     /// Creates a `Bundletool` command family bound to a shell context.
     ///
+    /// The JAR is resolved once, here, from `jarPath` and then `BUNDLETOOL_JAR` in the shell
+    /// context's environment, so ``command()`` stays a pure function of the value.
+    ///
     /// - Parameters:
     ///   - context: Shell execution context.
-    ///   - jarPath: Explicit path to `bundletool.jar`. Defaults to `BUNDLETOOL_JAR` env var,
-    ///     then falls back to `bundletool` command on PATH.
-    public init(context: ShellContext = .init(), jarPath: String? = nil) {
-        self.config = ToolConfiguration(context: context)
-        self.stdoutDestination = .capture
-        self.stderrDestination = .capture
-        self.arguments = []
-        self.jarPath = jarPath ?? ProcessInfo.processInfo.environment["BUNDLETOOL_JAR"]
+    ///   - jarPath: Explicit path to `bundletool.jar`. Defaults to `BUNDLETOOL_JAR` from the
+    ///     context's environment; when neither is set the `bundletool` executable is used.
+    ///   - executablePath: The native `bundletool` executable, used when no JAR is configured.
+    public init(
+        context: ShellContext = .init(),
+        jarPath: String? = nil,
+        executablePath: String = "bundletool"
+    ) {
+        if let jar = jarPath ?? Self.jarPath(environment: context.environment) {
+            self.spec = CommandSpec(executable: "java", prefix: ["-jar", jar], context: context)
+        } else {
+            self.spec = CommandSpec(executable: executablePath, context: context)
+        }
     }
 
-    private init(
-        config: ToolConfiguration,
-        stdoutDestination: OutputDestination,
-        stderrDestination: OutputDestination,
-        arguments: [String],
-        jarPath: String?
-    ) {
-        self.config = config
-        self.stdoutDestination = stdoutDestination
-        self.stderrDestination = stderrDestination
-        self.arguments = arguments
-        self.jarPath = jarPath
+    /// The JAR named by `BUNDLETOOL_JAR`, if set and non-empty.
+    static func jarPath(environment: [String: String]) -> String? {
+        environment["BUNDLETOOL_JAR"].flatMap { $0.isEmpty ? nil : $0 }
     }
 
     // MARK: - RunnableCommandFamily
 
     /// Returns a new value with updated shared tool configuration.
-    public func updatingConfiguration(
-        _ update: (ToolConfiguration) -> ToolConfiguration
-    ) -> Self {
-        copy(config: update(config), arguments: arguments)
+    public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {
+        modified(self) { $0.spec.config = update($0.spec.config) }
     }
 
     /// Redirects stdout.
     public func settingStdoutDestination(_ destination: OutputDestination) -> Self {
-        copy(stdoutDestination: destination, arguments: arguments)
+        modified(self) { $0.spec.stdout = destination }
     }
 
     /// Redirects stderr.
     public func settingStderrDestination(_ destination: OutputDestination) -> Self {
-        copy(stderrDestination: destination, arguments: arguments)
+        modified(self) { $0.spec.stderr = destination }
     }
 
     /// Builds the raw command.
     public func command() -> Command {
-        let base: Command
-        if let jar = jarPath {
-            base = Command("java")
-                .args(["-jar", jar])
-                .args(arguments)
-                .stdout(stdoutDestination)
-                .stderr(stderrDestination)
-        } else {
-            base = Command("bundletool")
-                .args(arguments)
-                .stdout(stdoutDestination)
-                .stderr(stderrDestination)
-        }
-        return config.apply(to: base)
+        spec.command()
     }
 
     // MARK: - Subcommands
@@ -149,7 +120,7 @@ public struct Bundletool: RunnableCommandFamily {
         if connectedDevice { args.append("--connected-device") }
         if let mode { args.append("--mode=\(mode.rawValue)") }
         if overwrite { args.append("--overwrite") }
-        return copy(arguments: args)
+        return operation(args)
     }
 
     /// `bundletool build-apks` — Build a signed APK set from an AAB using typed password sources.
@@ -190,7 +161,7 @@ public struct Bundletool: RunnableCommandFamily {
         if connectedDevice { args.append("--connected-device") }
         if let mode { args.append("--mode=\(mode.rawValue)") }
         if overwrite { args.append("--overwrite") }
-        return copy(arguments: args)
+        return operation(args)
     }
 
     /// `bundletool install-apks --apks=<path> [--device-id=<serial>]` — Install an APK set on a
@@ -202,40 +173,28 @@ public struct Bundletool: RunnableCommandFamily {
     public func installApks(apks: String, deviceID: String? = nil) -> Self {
         var args = ["install-apks", "--apks=\(apks)"]
         if let deviceID { args.append("--device-id=\(deviceID)") }
-        return copy(arguments: args)
+        return operation(args)
     }
 
     /// `bundletool validate --bundle=<path>` — Validate an AAB file.
     public func validate(bundle: String) -> Self {
-        copy(arguments: ["validate", "--bundle=\(bundle)"])
+        operation(["validate", "--bundle=\(bundle)"])
     }
 
     /// `bundletool get-device-spec --output=<path>` — Write the connected device spec to a JSON file.
     public func getDeviceSpec(output: String) -> Self {
-        copy(arguments: ["get-device-spec", "--output=\(output)"])
+        operation(["get-device-spec", "--output=\(output)"])
     }
 
     /// `bundletool get-size total --apks=<path>` — Estimate download size for an APK set.
     public func getSize(apks: String) -> Self {
-        copy(arguments: ["get-size", "total", "--apks=\(apks)"])
+        operation(["get-size", "total", "--apks=\(apks)"])
     }
 
     // MARK: - Private
 
-    private func copy(
-        config: ToolConfiguration? = nil,
-        stdoutDestination: OutputDestination? = nil,
-        stderrDestination: OutputDestination? = nil,
-        arguments: [String],
-        jarPath: String?? = .none
-    ) -> Self {
-        Self(
-            config: config ?? self.config,
-            stdoutDestination: stdoutDestination ?? self.stdoutDestination,
-            stderrDestination: stderrDestination ?? self.stderrDestination,
-            arguments: arguments,
-            jarPath: jarPath != .none ? jarPath! : self.jarPath
-        )
+    private func operation(_ values: [String]) -> Self {
+        modified(self) { $0.spec.arguments = values }
     }
 }
 

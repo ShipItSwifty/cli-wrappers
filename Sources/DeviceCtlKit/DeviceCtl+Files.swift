@@ -1,5 +1,5 @@
 import Foundation
-import WrapperSupport
+internal import WrapperSupport
 
 // `device copy` and `device capture`: moving files and screen contents between host and device.
 extension DeviceCtl {

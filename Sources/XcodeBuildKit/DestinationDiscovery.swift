@@ -1,7 +1,7 @@
 import Foundation
 import Logging
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// A discovered xcodebuild destination for running tests.
 public struct XcodebuildDestination: Codable, Sendable, Hashable {
@@ -17,7 +17,14 @@ public struct XcodebuildDestination: Codable, Sendable, Hashable {
     public var isSimulator: Bool { platform.contains("Simulator") }
 
     /// The full xcodebuild `-destination` string for this destination.
+    ///
+    /// Uses `platform=<platform>,id=<udid>` when a UDID is known, since two simulators can share
+    /// a name and OS version and only the identifier selects one. Without a UDID it falls back to
+    /// `platform`, `name`, and `OS`.
     public var destinationString: String {
+        if let udid, !udid.isEmpty {
+            return "platform=\(platform),id=\(udid)"
+        }
         var parts = ["platform=\(platform)", "name=\(name)"]
         if let os {
             parts.append("OS=\(os)")
@@ -63,7 +70,9 @@ public struct DestinationDiscovery: Sendable {
     ///   - workspace: Path to the `.xcworkspace` (preferred when present).
     ///   - project: Path to the `.xcodeproj` (used when no workspace is given).
     /// - Returns: Array of available destinations, sorted simulators first then devices.
-    /// - Throws: `ShipItError` when xcodebuild cannot be invoked.
+    /// - Throws: The `ShellError` from `xcodebuild` when it fails and its output holds no
+    ///   destination. Use ``parseDestinations(from:)`` to apply a different policy, such as
+    ///   treating that failure as an empty list.
     public func availableDestinations(
         scheme: String,
         workspace: String? = nil,
@@ -85,30 +94,34 @@ public struct DestinationDiscovery: Sendable {
         let output: ShellOutput
         do {
             output = try await xcodeBuild.run()
-        } catch let ShellError.exitFailure(_, shellOutput) {
+        } catch let ShellError.exitFailure(command, shellOutput) {
             // xcodebuild -showdestinations exits non-zero on some Xcode versions even
             // when it successfully lists destinations; try to parse whatever we got.
             let combined = [shellOutput.stdout, shellOutput.stderr]
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n")
-            let parsed = parseDestinations(from: combined)
+            let parsed = Self.parseDestinations(from: combined)
             if !parsed.isEmpty {
                 logger.info("Parsed \(parsed.count) destination(s) from non-zero exit output")
                 return parsed
             }
-            logger.error("xcodebuild -showdestinations failed: \(combined)")
-            return []
+            logger.error("xcodebuild -showdestinations failed and listed no destinations", metadata: ["scheme": "\(scheme)"])
+            throw ShellError.exitFailure(command: command, output: shellOutput)
         }
 
         let combined = [output.stdout, output.stderr]
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-        let destinations = parseDestinations(from: combined)
+        let destinations = Self.parseDestinations(from: combined)
         logger.info("Found \(destinations.count) destination(s) for scheme '\(scheme)'")
         return destinations
     }
 
     // MARK: - Parsing
+
+    // Regex values are immutable once built but not yet marked `Sendable`; they are compiled once here.
+    nonisolated(unsafe) private static let blockPattern = /\{([^}]+)\}/
+    nonisolated(unsafe) private static let fieldSeparator = /,\s*(?=(?:platform|id|OS|name|variant|arch|error):)/
 
     /// Parses `xcodebuild -showdestinations` output into typed destination values.
     ///
@@ -117,30 +130,11 @@ public struct DestinationDiscovery: Sendable {
     ///     { platform:iOS Simulator, id:..., OS:18.2, name:iPhone 16 Pro }
     ///     { platform:iOS, id:..., name:My iPhone }
     /// ```
-    /// Each `{ ... }` block represents one destination.
-    func parseDestinations(from output: String) -> [XcodebuildDestination] {
-        var destinations: [XcodebuildDestination] = []
+    /// Each `{ ... }` block represents one destination. Blocks with an `error:` field are skipped.
+    /// Simulators sort before physical devices, each group by name.
+    public static func parseDestinations(from output: String) -> [XcodebuildDestination] {
+        let destinations = output.matches(of: blockPattern).compactMap { parseBlock(String($0.output.1)) }
 
-        // Match each { ... } destination block (may span one line)
-        // xcodebuild writes them one per line in the form:
-        //   { platform:iOS Simulator, id:..., OS:18.2, name:iPhone 16 Pro }
-        let blockPattern = #"\{([^}]+)\}"#
-        guard let regex = try? NSRegularExpression(pattern: blockPattern) else {
-            return []
-        }
-
-        let range = NSRange(output.startIndex..., in: output)
-        let matches = regex.matches(in: output, range: range)
-
-        for match in matches {
-            guard let matchRange = Range(match.range(at: 1), in: output) else { continue }
-            let block = String(output[matchRange])
-            if let destination = parseBlock(block) {
-                destinations.append(destination)
-            }
-        }
-
-        // Simulators first, then physical devices, both sorted by name
         return destinations.sorted { lhs, rhs in
             if lhs.isSimulator != rhs.isSimulator { return lhs.isSimulator }
             return lhs.name < rhs.name
@@ -148,31 +142,12 @@ public struct DestinationDiscovery: Sendable {
     }
 
     /// Parses a single `key:value, key:value` block into an `XcodebuildDestination`.
-    private func parseBlock(_ block: String) -> XcodebuildDestination? {
-        // Split on ", " but be careful: values themselves may contain spaces.
-        // Keys are: platform, id, OS, name, error (invalid destinations)
-        // Strategy: split on ", <known-key>:" boundaries.
+    ///
+    /// Values may contain spaces and commas, so the block is split only on `, <known-key>:`.
+    private static func parseBlock(_ block: String) -> XcodebuildDestination? {
         var kvPairs: [String: String] = [:]
-        let knownKeys = ["platform", "id", "OS", "name", "variant", "arch", "error"]
 
-        // Build a pattern that splits on ", <knownKey>:"
-        let keyAlternation = knownKeys.joined(separator: "|")
-        let splitPattern = ",\\s*(?=\(keyAlternation):)"
-        guard let splitRegex = try? NSRegularExpression(pattern: splitPattern) else { return nil }
-
-        let nsBlock = block as NSString
-        let splitRanges = splitRegex.matches(in: block, range: NSRange(location: 0, length: nsBlock.length))
-
-        var segments: [String] = []
-        var lastEnd = block.startIndex
-        for match in splitRanges {
-            guard let range = Range(match.range, in: block) else { continue }
-            segments.append(String(block[lastEnd..<range.lowerBound]))
-            lastEnd = range.upperBound
-        }
-        segments.append(String(block[lastEnd...]))
-
-        for segment in segments {
+        for segment in block.split(separator: fieldSeparator) {
             let trimmed = segment.trimmingCharacters(in: .whitespaces)
             guard let colonIdx = trimmed.firstIndex(of: ":") else { continue }
             let key = String(trimmed[trimmed.startIndex..<colonIdx]).trimmingCharacters(in: .whitespaces)
@@ -184,7 +159,6 @@ public struct DestinationDiscovery: Sendable {
             let name = kvPairs["name"], !name.isEmpty
         else { return nil }
 
-        // Skip destinations that have an error marker (invalid/unavailable)
         if kvPairs["error"] != nil { return nil }
 
         return XcodebuildDestination(

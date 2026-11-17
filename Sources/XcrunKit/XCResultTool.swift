@@ -16,8 +16,11 @@ public struct XCResultTool: RunnableCommandFamily {
     /// The shell context used when running this command family.
     public var context: ShellContext { xcrun.context }
 
-    public init(context: ShellContext = .init()) {
-        self.xcrun = Xcrun(context: context)
+    /// Creates an `xcresulttool` command family bound to a shell context.
+    ///
+    /// - Parameter executablePath: The `xcrun` executable, resolved through `PATH` when it has no slash.
+    public init(context: ShellContext = .init(), executablePath: String = "xcrun") {
+        self.xcrun = Xcrun(context: context, executablePath: executablePath)
     }
 
     public func updatingConfiguration(_ update: (ToolConfiguration) -> ToolConfiguration) -> Self {

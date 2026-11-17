@@ -136,25 +136,49 @@ public struct XcodeBuildOption: Sendable, Equatable, Hashable {
     public static func jobs(_ value: String) -> Self {
         Self("-jobs", value)
     }
+    /// Same option with an integer value.
+    public static func jobs(_ value: Int) -> Self {
+        jobs(String(value))
+    }
     /// Emits `-maximum-concurrent-test-device-destinations <value>`.
     public static func maximumConcurrentTestDeviceDestinations(_ value: String) -> Self {
         Self("-maximum-concurrent-test-device-destinations", value)
+    }
+    /// Same option with an integer value.
+    public static func maximumConcurrentTestDeviceDestinations(_ value: Int) -> Self {
+        maximumConcurrentTestDeviceDestinations(String(value))
     }
     /// Emits `-maximum-concurrent-test-simulator-destinations <value>`.
     public static func maximumConcurrentTestSimulatorDestinations(_ value: String) -> Self {
         Self("-maximum-concurrent-test-simulator-destinations", value)
     }
+    /// Same option with an integer value.
+    public static func maximumConcurrentTestSimulatorDestinations(_ value: Int) -> Self {
+        maximumConcurrentTestSimulatorDestinations(String(value))
+    }
     /// Emits `-parallel-testing-enabled <value>`.
     public static func parallelTestingEnabled(_ value: String) -> Self {
         Self("-parallel-testing-enabled", value)
+    }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func parallelTestingEnabled(_ value: Bool) -> Self {
+        parallelTestingEnabled(value ? "YES" : "NO")
     }
     /// Emits `-parallel-testing-worker-count <value>`.
     public static func parallelTestingWorkerCount(_ value: String) -> Self {
         Self("-parallel-testing-worker-count", value)
     }
+    /// Same option with an integer value.
+    public static func parallelTestingWorkerCount(_ value: Int) -> Self {
+        parallelTestingWorkerCount(String(value))
+    }
     /// Emits `-maximum-parallel-testing-workers <value>`.
     public static func maximumParallelTestingWorkers(_ value: String) -> Self {
         Self("-maximum-parallel-testing-workers", value)
+    }
+    /// Same option with an integer value.
+    public static func maximumParallelTestingWorkers(_ value: Int) -> Self {
+        maximumParallelTestingWorkers(String(value))
     }
     /// Emits `-quiet`.
     public static let quiet = Self("-quiet")
@@ -186,13 +210,25 @@ public struct XcodeBuildOption: Sendable, Equatable, Hashable {
     public static func enableAddressSanitizer(_ value: String) -> Self {
         Self("-enableAddressSanitizer", value)
     }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func enableAddressSanitizer(_ value: Bool) -> Self {
+        enableAddressSanitizer(value ? "YES" : "NO")
+    }
     /// Emits `-enableThreadSanitizer <value>`.
     public static func enableThreadSanitizer(_ value: String) -> Self {
         Self("-enableThreadSanitizer", value)
     }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func enableThreadSanitizer(_ value: Bool) -> Self {
+        enableThreadSanitizer(value ? "YES" : "NO")
+    }
     /// Emits `-enableUndefinedBehaviorSanitizer <value>`.
     public static func enableUndefinedBehaviorSanitizer(_ value: String) -> Self {
         Self("-enableUndefinedBehaviorSanitizer", value)
+    }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func enableUndefinedBehaviorSanitizer(_ value: Bool) -> Self {
+        enableUndefinedBehaviorSanitizer(value ? "YES" : "NO")
     }
     /// Emits `-resultBundlePath <value>`.
     public static func resultBundlePath(_ value: String) -> Self {
@@ -229,6 +265,10 @@ public struct XcodeBuildOption: Sendable, Equatable, Hashable {
     /// Emits `-enableCodeCoverage <value>`.
     public static func enableCodeCoverage(_ value: String) -> Self {
         Self("-enableCodeCoverage", value)
+    }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func enableCodeCoverage(_ value: Bool) -> Self {
+        enableCodeCoverage(value ? "YES" : "NO")
     }
     /// Emits `-exportPath <value>`.
     public static func exportPath(_ value: String) -> Self {
@@ -268,6 +308,10 @@ public struct XcodeBuildOption: Sendable, Equatable, Hashable {
     public static func enablePerformanceTestsDiagnostics(_ value: String) -> Self {
         Self("-enablePerformanceTestsDiagnostics", value)
     }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func enablePerformanceTestsDiagnostics(_ value: Bool) -> Self {
+        enablePerformanceTestsDiagnostics(value ? "YES" : "NO")
+    }
     /// Emits `-testPlan <value>`.
     public static func testPlan(_ value: String) -> Self {
         Self("-testPlan", value)
@@ -292,17 +336,33 @@ public struct XcodeBuildOption: Sendable, Equatable, Hashable {
     public static func testTimeoutsEnabled(_ value: String) -> Self {
         Self("-test-timeouts-enabled", value)
     }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func testTimeoutsEnabled(_ value: Bool) -> Self {
+        testTimeoutsEnabled(value ? "YES" : "NO")
+    }
     /// Emits `-default-test-execution-time-allowance <value>`.
     public static func defaultTestExecutionTimeAllowance(_ value: String) -> Self {
         Self("-default-test-execution-time-allowance", value)
+    }
+    /// Same option with an integer value.
+    public static func defaultTestExecutionTimeAllowance(_ value: Int) -> Self {
+        defaultTestExecutionTimeAllowance(String(value))
     }
     /// Emits `-maximum-test-execution-time-allowance <value>`.
     public static func maximumTestExecutionTimeAllowance(_ value: String) -> Self {
         Self("-maximum-test-execution-time-allowance", value)
     }
+    /// Same option with an integer value.
+    public static func maximumTestExecutionTimeAllowance(_ value: Int) -> Self {
+        maximumTestExecutionTimeAllowance(String(value))
+    }
     /// Emits `-test-iterations <value>`.
     public static func testIterations(_ value: String) -> Self {
         Self("-test-iterations", value)
+    }
+    /// Same option with an integer value.
+    public static func testIterations(_ value: Int) -> Self {
+        testIterations(String(value))
     }
     /// Emits `-retry-tests-on-failure`.
     public static let retryTestsOnFailure = Self("-retry-tests-on-failure")
@@ -311,6 +371,10 @@ public struct XcodeBuildOption: Sendable, Equatable, Hashable {
     /// Emits `-test-repetition-relaunch-enabled <value>`.
     public static func testRepetitionRelaunchEnabled(_ value: String) -> Self {
         Self("-test-repetition-relaunch-enabled", value)
+    }
+    /// Same option with a Boolean rendered as `YES` or `NO`.
+    public static func testRepetitionRelaunchEnabled(_ value: Bool) -> Self {
+        testRepetitionRelaunchEnabled(value ? "YES" : "NO")
     }
     /// Emits `-only-test-configuration <value>`.
     public static func onlyTestConfiguration(_ value: String) -> Self {

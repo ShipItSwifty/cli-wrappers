@@ -58,6 +58,12 @@ enum XcodeBuildOperation: Sendable, Equatable {
     case exportArchive(archivePath: String, exportPath: String?, exportOptionsPlist: String)
     case showBuildSettings(json: Bool)
     case showDestinations
+    case clean
+    case analyze
+    case docbuild
+    case resolvePackageDependencies
+    case list(json: Bool)
+    case version
     case createXCFramework(inputs: [XcodeBuildXCFrameworkInput], output: String, allowInternalDistribution: Bool)
 
     var prefixArguments: [String] {
@@ -69,6 +75,8 @@ enum XcodeBuildOperation: Sendable, Equatable {
             }
             arguments += ["-exportOptionsPlist", exportOptionsPlist]
             return arguments
+        case .version:
+            return ["-version"]
         case .createXCFramework(let inputs, let output, let allowInternalDistribution):
             var arguments = ["-create-xcframework"]
             arguments += inputs.flatMap(\.arguments)
@@ -90,6 +98,10 @@ enum XcodeBuildOperation: Sendable, Equatable {
             json ? ["-showBuildSettings", "-json"] : ["-showBuildSettings"]
         case .showDestinations:
             ["-showdestinations"]
+        case .resolvePackageDependencies:
+            ["-resolvePackageDependencies"]
+        case .list(let json):
+            json ? ["-list", "-json"] : ["-list"]
         default:
             []
         }
@@ -107,6 +119,12 @@ enum XcodeBuildOperation: Sendable, Equatable {
             ["test-without-building"]
         case .archive:
             ["archive"]
+        case .clean:
+            ["clean"]
+        case .analyze:
+            ["analyze"]
+        case .docbuild:
+            ["docbuild"]
         default:
             []
         }

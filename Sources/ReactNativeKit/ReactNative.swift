@@ -1,6 +1,6 @@
 import Foundation
 import SwiftyShell
-import WrapperSupport
+internal import WrapperSupport
 
 /// How a project's locally installed JavaScript CLI is invoked.
 public enum JSPackageRunner: Sendable, Equatable {

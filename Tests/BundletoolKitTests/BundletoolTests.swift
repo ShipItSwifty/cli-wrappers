@@ -32,4 +32,34 @@ struct BundletoolTests {
         #expect(args.contains("--bundle=app-release.aab"))
         #expect(args.contains("--output=app.apks"))
     }
+
+    @Test("The jar comes from the context environment, resolved once at init")
+    func jarFromContextEnvironment() {
+        let context = ShellContext(environment: ["BUNDLETOOL_JAR": "/opt/bundletool.jar"])
+        let command = Bundletool(context: context).validate(bundle: "a.aab").command()
+        #expect(command.executableName == "java")
+        #expect(command.arguments == ["-jar", "/opt/bundletool.jar", "validate", "--bundle=a.aab"])
+    }
+
+    @Test("An explicit jar beats the environment")
+    func explicitJarWins() {
+        let context = ShellContext(environment: ["BUNDLETOOL_JAR": "/env.jar"])
+        let command = Bundletool(context: context, jarPath: "/explicit.jar").getSize(apks: "a.apks").command()
+        #expect(command.arguments == ["-jar", "/explicit.jar", "get-size", "total", "--apks=a.apks"])
+    }
+
+    @Test("Without a jar the native executable is used")
+    func nativeExecutable() {
+        let context = ShellContext(environment: [:])
+        #expect(Bundletool(context: context).getSize(apks: "a.apks").command().executableName == "bundletool")
+        #expect(
+            Bundletool(context: context, executablePath: "/opt/bundletool").getDeviceSpec(output: "d.json").command().executableName
+                == "/opt/bundletool")
+    }
+
+    @Test("The process environment is not consulted")
+    func processEnvironmentIgnored() {
+        let context = ShellContext(environment: [:])
+        #expect(Bundletool(context: context).validate(bundle: "a.aab").command().executableName == "bundletool")
+    }
 }
