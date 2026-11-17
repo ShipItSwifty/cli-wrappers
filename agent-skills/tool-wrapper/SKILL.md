@@ -42,7 +42,8 @@ public struct Tool: RunnableCommandFamily {
     /// `tool sub --flag <value>`.
     public func sub(value: String) -> Self { modified(self) { $0.spec.arguments = ["sub", "--flag", value] } }
 
-    public func command() -> Command { spec.command() }   // pure: builds argv, launches nothing
+    /// Pure: builds argv, launches nothing.
+    public func command() -> Command { spec.command() }
 }
 ```
 
